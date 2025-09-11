@@ -147,35 +147,52 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Mensaje no puede estar vacío' });
     }
 
+    // Verificar que tenemos la API key
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error('Claude API key no configurada');
+    }
+
     // Llamar a Claude API
-    const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
+    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01"
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: "claude-3-sonnet-20240229",
-        max_tokens: 500,
+        model: 'claude-3-sonnet-20240229',
+        max_tokens: 300,
         messages: [
           { 
-            role: "user", 
-            content: `Eres un experto asesor de inversiones especializado en IA y computación cuántica. 
-
-Pregunta del usuario: ${message}
-
-Responde de forma profesional y práctica. Incluye:
-- Análisis específico si mencionan una acción
-- Riesgos y oportunidades 
-- Recomendaciones concretas
-- Tickers relevantes cuando aplique
-
-Mantén un tono profesional pero accesible.`
+            role: 'user', 
+            content: `Eres un experto asesor de inversiones especializado en IA y computación cuántica. Pregunta del usuario: ${message}. Responde de forma profesional y práctica con análisis específico, riesgos, oportunidades y recomendaciones concretas.`
           }
         ]
       })
     });
+
+    if (!claudeResponse.ok) {
+      const errorText = await claudeResponse.text();
+      console.error('Claude API error:', errorText);
+      throw new Error('Error en Claude API');
+    }
+
+    const claudeData = await claudeResponse.json();
+    const aiResponse = claudeData.content[0].text;
+
+    console.log(`💬 Claude respondió a: ${message.substring(0, 50)}...`);
+
+    res.json({ response: aiResponse });
+  } catch (error) {
+    console.error('Error en chat:', error);
+    
+    // Fallback a respuesta básica si Claude falla
+    const fallbackResponse = `Gracias por tu consulta sobre "${message}". Estoy experimentando problemas técnicos temporales con el análisis IA. Normalmente proporciono análisis detallados sobre inversiones en IA y computación cuántica.`;
+    
+    res.json({ response: fallbackResponse });
+  }
+});
 
     if (!claudeResponse.ok) {
       throw new Error('Error en Claude API');
