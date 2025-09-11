@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const rateLimit = require('express-rate-limit');
+const natural = require('natural');
 require('dotenv').config();
 
 const app = express();
@@ -22,10 +24,18 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Rate limiting para prevenir abuso
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100, // 100 requests por IP
+  message: 'Demasiadas solicitudes, intenta de nuevo más tarde.'
+}));
+
 // Variables de entorno - log de inicialización
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'Configurada' : 'NO configurada');
 console.log('JWT_SECRET:', process.env.JWT_SECRET ? 'Configurada' : 'NO configurada');
 console.log('ANTHROPIC_API_KEY:', process.env.ANTHROPIC_API_KEY ? 'Configurada' : 'NO configurada');
+console.log('ALPHA_VANTAGE_API_KEY:', process.env.ALPHA_VANTAGE_API_KEY ? 'Configurada' : 'NO configurada');
 
 // Middleware de autenticación
 const authenticateToken = (req, res, next) => {
@@ -43,45 +53,72 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Función para detectar idioma (simplificada)
+function detectLanguage(message) {
+  const spanishKeywords = ['acciones', 'inversión', 'mercado', 'bitcoin', 'tesla'];
+  return message.toLowerCase().some(word => spanishKeywords.includes(word)) ? 'es' : 'en';
+}
+
+// Función para obtener datos en tiempo real
+async function fetchMarketData(symbol) {
+  if (!process.env.ALPHA_VANTAGE_API_KEY) {
+    return `Datos en tiempo real no disponibles para ${symbol}.`;
+  }
+
+  try {
+    const response = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${process.env.ALPHA_VANTAGE_API_KEY}`);
+    const data = await response.json();
+    if (data['Global Quote']) {
+      const quote = data['Global Quote'];
+      return `Precio actual de ${symbol}: $${quote['05. price']} (Actualizado: ${quote['07. latest trading day']})`;
+    }
+    return `No se encontraron datos para ${symbol}.`;
+  } catch (error) {
+    console.error(`Error en Alpha Vantage API: ${error.message}`);
+    return `No se pudieron obtener datos en tiempo real para ${symbol}.`;
+  }
+}
+
+// Función para clasificar consultas
+function classifyQuery(message) {
+  const classifier = new natural.BayesClassifier();
+  classifier.addDocument('acciones nvidia tesla microsoft google', 'stocks');
+  classifier.addDocument('bitcoin crypto eth', 'crypto');
+  classifier.addDocument('fed intereses inflación', 'macro');
+  classifier.train();
+  return classifier.classify(message.toLowerCase());
+}
+
 // Función para generar respuestas dinámicas basadas en contexto
-function generateDynamicResponse(message) {
+function generateDynamicResponse(message, userId, subscriptionPlan) {
   const lowerMessage = message.toLowerCase();
+  const isPremium = subscriptionPlan === 'premium';
   
   const responses = {
-    nvidia: "NVIDIA (NVDA): Líder absoluto en chips de IA. Crecimiento del 200%+ en 2024 por demanda de GPUs para IA. Riesgos: alta volatilidad, competencia de AMD/Intel. Trading actual: $400-500. Recomendación: esperar pullback a $350-380 para entrada.",
-    
-    bitcoin: "Bitcoin vs Acciones IA: Bitcoin es especulativo puro, las acciones de IA tienen fundamentales sólidos. NVDA, MSFT, GOOGL ofrecen exposición a IA con menos volatilidad que crypto. Si buscas crecimiento, prefiere acciones de IA sobre Bitcoin.",
-    
-    tesla: "Tesla (TSLA): Combina autos eléctricos + IA automotriz (FSD, Autopilot). Valoración alta ($200-250) pero potencial en robotaxis. Competencia: BYD, Rivian. Riesgo Musk. Considera solo si crees en visión a largo plazo.",
-    
-    microsoft: "Microsoft (MSFT): Inversión masiva en OpenAI/ChatGPT. Azure creciendo por demanda de IA empresarial. Dividendo seguro, menos volátil que NVDA. Trading: $350-400. Ideal para portfolio conservador con exposición IA.",
-    
-    google: "Google/Alphabet (GOOGL): Bard compite con ChatGPT, líder en investigación IA. Cloud en crecimiento. Valuación atractiva vs MSFT. Riesgo regulatorio antimonopolio. Precio actual: $130-140. Buena entrada a estos niveles.",
-    
-    quantum: "Computación Cuántica: Sector emergente. Empresas: IBM (más sólida), IonQ (IONQ), Rigetti (RGTI). Muy especulativo, tecnología años de comercialización. Solo para risk capital. IBM más segura por diversificación.",
-    
-    inversion: "Para invertir en IA: 1) Core holding: NVDA (30%) 2) Diversificación: MSFT, GOOGL (40%) 3) Especulativo: IonQ, Tesla (20%) 4) Cash: 10% para oportunidades. Dollar-cost averaging recomendado por volatilidad.",
-    
-    default: `Análisis de "${message}": El mercado de IA está en consolidación tras el rally de 2024. Sectores clave: semiconductores (NVDA, AMD), software (MSFT, GOOGL), aplicaciones (Tesla, Palantir). Recomiendo diversificación y entrada gradual. ¿Qué específicamente te interesa analizar?`
+    nvidia: `NVIDIA (NVDA): Líder en chips de IA. Crecimiento sólido en 2025 por demanda de GPUs. Riesgos: competencia de AMD/Intel, volatilidad post-ganancias. ${isPremium ? 'Recomendación Premium: Entrada en $350-$380, stop-loss $320, target $450.' : 'Actualiza a premium para recomendaciones detalladas.'}`,
+    bitcoin: `Bitcoin: ~$63,000 (Septiembre 2025). Alta volatilidad pre-halving. Riesgos: regulación, correcciones de mercado. ${isPremium ? 'Recomendación Premium: Compra en $58,000-$60,000, stop-loss $55,000.' : 'Actualiza a premium para recomendaciones detalladas.'}`,
+    tesla: `Tesla (TSLA): Innovador en IA automotriz. Precio: ~$240. Riesgos: competencia (BYD), ejecución de robotaxis. ${isPremium ? 'Recomendación Premium: Entrada en $220, stop-loss $200, target $300.' : 'Actualiza a premium para recomendaciones detalladas.'}`,
+    default: `Análisis de "${message}": Mercado de IA en maduración (Septiembre 2025). Líderes: NVDA, MSFT, GOOGL. Recomiendo diversificación. ${isPremium ? 'Obtén análisis personalizados con premium.' : 'Actualiza a premium para análisis detallados.'}`
   };
 
-  // Buscar palabras clave en el mensaje
   for (const [key, response] of Object.entries(responses)) {
     if (key !== 'default' && lowerMessage.includes(key)) {
       return response;
     }
   }
-  
-  // Si no encuentra keywords específicas, usar respuesta por defecto
   return responses.default;
 }
 
 // Función auxiliar para llamar a Claude API
-async function callClaudeAPI(userMessage) {
+async function callClaudeAPI(userMessage, userId, subscriptionPlan) {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('Claude API key no configurada');
   }
 
+  const category = classifyQuery(userMessage);
+  const marketData = await fetchMarketData(category === 'stocks' ? userMessage.split(' ')[0].toUpperCase() : 'BTCUSD');
+  const language = detectLanguage(userMessage);
+  
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -90,30 +127,43 @@ async function callClaudeAPI(userMessage) {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-3-haiku-20240307', // Modelo más económico
-      max_tokens: 200, // Reducido para controlar costos
+      model: subscriptionPlan === 'premium' ? 'claude-3-sonnet-20240229' : 'claude-3-haiku-20240307',
+      max_tokens: subscriptionPlan === 'premium' ? 400 : 200,
       messages: [
         {
           role: 'user',
-          content: `Eres un asesor experto en inversiones de IA y tecnología. 
+          content: `Eres un asesor senior de inversiones con 15+ años de experiencia en Wall Street, especializado en tecnología, IA y mercados financieros.
 
-Pregunta: ${userMessage}
+Contexto actual (Septiembre 2025):
+${marketData}
 
-Responde en máximo 150 palabras con:
-- Análisis específico de la consulta
-- Precio actual aproximado si es una acción
-- Riesgos principales 
+CONSULTA: "${userMessage}"
+
+INSTRUCCIONES:
+1. Clasifica la consulta como ${category}.
+2. Si es ambigua, solicita aclaraciones.
+3. Proporciona datos actuales y precisos.
+4. Incluye análisis técnico y fundamental.
+5. Menciona riesgos específicos y timeframes.
+6. Da recomendaciones accionables (entrada, stop-loss, target).
+7. Tono profesional pero accesible.
+8. Responde en ${language === 'es' ? 'español' : 'inglés'}.
+
+ESTRUCTURA:
+- Análisis directo
+- Contexto de mercado
+- Riesgos principales
 - Recomendación práctica
+- Timeframe sugerido
 
-Sé directo y profesional.`
+Máximo ${subscriptionPlan === 'premium' ? 300 : 150} palabras.`
         }
       ]
     })
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`Claude API error ${response.status}:`, errorText);
+    console.error(`Claude API error ${response.status}`);
     throw new Error(`Claude API error: ${response.status}`);
   }
 
@@ -129,7 +179,8 @@ app.get('/', (req, res) => {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
     database: process.env.DATABASE_URL ? 'Variable configurada' : 'Variable NO configurada',
-    claude_ai: process.env.ANTHROPIC_API_KEY ? 'Disponible' : 'No configurada'
+    claude_ai: process.env.ANTHROPIC_API_KEY ? 'Disponible' : 'No configurada',
+    alpha_vantage: process.env.ALPHA_VANTAGE_API_KEY ? 'Disponible' : 'No configurada'
   });
 });
 
@@ -138,11 +189,12 @@ app.get('/api/health', (req, res) => {
     status: 'OK',
     service: 'AI Investment Advisor',
     database: process.env.DATABASE_URL ? 'URL disponible' : 'URL no disponible',
-    claude_ai: process.env.ANTHROPIC_API_KEY ? 'Disponible' : 'No configurada'
+    claude_ai: process.env.ANTHROPIC_API_KEY ? 'Disponible' : 'No configurada',
+    alpha_vantage: process.env.ALPHA_VANTAGE_API_KEY ? 'Disponible' : 'No configurada'
   });
 });
 
-// Registro de usuarios (versión simplificada)
+// Registro de usuarios
 app.post('/api/register', async (req, res) => {
   try {
     const { email, password, name } = req.body;
@@ -151,38 +203,36 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ error: 'Todos los campos son requeridos' });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
     }
 
-    // Crear usuario sin hash de password (para testing)
-    const newUser = {
-      id: Date.now(), // ID temporal basado en timestamp
-      email: email,
-      name: name,
-      subscription_plan: 'free'
-    };
+    const client = await pool.connect();
+    try {
+      const result = await client.query(
+        'INSERT INTO users (email, name, password, subscription_plan) VALUES ($1, $2, $3, $4) RETURNING id',
+        [email, name, password, 'free']
+      );
+      const newUser = { id: result.rows[0].id, email, name, subscription_plan: 'free' };
 
-    // Generar token JWT
-    const token = jwt.sign(
-      { userId: newUser.id, email: newUser.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+      const token = jwt.sign(
+        { userId: newUser.id, email: newUser.email },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
 
-    console.log(`✅ Usuario registrado: ${email}`);
-
-    res.json({
-      token,
-      user: newUser
-    });
+      console.log(`✅ Usuario registrado: ${email}`);
+      res.json({ token, user: newUser });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error('Error en registro:', error);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });
 
-// Login de usuarios (versión simplificada)
+// Login de usuarios
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -191,27 +241,25 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ error: 'Email y contraseña son requeridos' });
     }
 
-    // Login simplificado para testing (acepta cualquier password válido)
-    const user = {
-      id: Date.now(),
-      email: email,
-      name: email.split('@')[0], // Usar parte antes del @ como nombre
-      subscription_plan: 'free'
-    };
+    const client = await pool.connect();
+    try {
+      const result = await client.query('SELECT * FROM users WHERE email = $1 AND password = $2', [email, password]);
+      if (result.rows.length === 0) {
+        return res.status(401).json({ error: 'Credenciales inválidas' });
+      }
 
-    // Generar token JWT
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+      const user = result.rows[0];
+      const token = jwt.sign(
+        { userId: user.id, email: user.email },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
 
-    console.log(`✅ Usuario logueado: ${email}`);
-
-    res.json({
-      token,
-      user: user
-    });
+      console.log(`✅ Usuario logueado: ${email}`);
+      res.json({ token, user: { id: user.id, email: user.email, name: user.name, subscription_plan: user.subscription_plan } });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error('Error en login:', error);
     res.status(500).json({ error: 'Error del servidor' });
@@ -221,21 +269,23 @@ app.post('/api/login', async (req, res) => {
 // Datos del usuario
 app.get('/api/user-data', authenticateToken, async (req, res) => {
   try {
-    const user = {
-      id: req.user.userId,
-      email: req.user.email,
-      name: req.user.email.split('@')[0],
-      subscription_plan: 'free'
-    };
-
-    res.json({ user: user });
+    const client = await pool.connect();
+    try {
+      const result = await client.query('SELECT id, email, name, subscription_plan FROM users WHERE id = $1', [req.user.userId]);
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Usuario no encontrado' });
+      }
+      res.json({ user: result.rows[0] });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error('Error obteniendo datos del usuario:', error);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });
 
-// Chat con Claude IA mejorado y optimizado
+// Chat con Claude IA mejorado
 app.post('/api/chat', authenticateToken, async (req, res) => {
   try {
     const { message } = req.body;
@@ -245,13 +295,21 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Mensaje no puede estar vacío' });
     }
 
+    const client = await pool.connect();
+    let subscriptionPlan;
+    try {
+      const result = await client.query('SELECT subscription_plan FROM users WHERE id = $1', [userId]);
+      subscriptionPlan = result.rows[0]?.subscription_plan || 'free';
+    } finally {
+      client.release();
+    }
+
     let response;
     let usedClaude = false;
 
-    // Intentar Claude IA primero
     if (process.env.ANTHROPIC_API_KEY) {
       try {
-        response = await callClaudeAPI(message);
+        response = await callClaudeAPI(message, userId, subscriptionPlan);
         usedClaude = true;
         console.log(`💬 Claude respondió a usuario ${userId}: ${message.substring(0, 30)}...`);
       } catch (claudeError) {
@@ -260,58 +318,68 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
       }
     }
 
-    // Si Claude falló o no está disponible, usar respuesta dinámica
     if (!usedClaude) {
-      response = generateDynamicResponse(message);
+      response = generateDynamicResponse(message, userId, subscriptionPlan);
       console.log(`🤖 Respuesta dinámica para usuario ${userId}: ${message.substring(0, 30)}...`);
     }
 
-    res.json({ response });
+    // Guardar interacción en la base de datos
+    const clientSave = await pool.connect();
+    try {
+      await clientSave.query(
+        'INSERT INTO interactions (user_id, message, response, created_at) VALUES ($1, $2, $3, $4)',
+        [userId, message, response, new Date()]
+      );
+    } finally {
+      clientSave.release();
+    }
+
+    res.json({ response, isPremium: subscriptionPlan === 'premium' });
   } catch (error) {
     console.error('Error en chat:', error);
     res.status(500).json({ error: 'Error al procesar consulta' });
   }
 });
 
-// Análisis de portfolio (placeholder para futura implementación)
+// Análisis de portfolio
 app.post('/api/analyze-portfolio', authenticateToken, async (req, res) => {
   try {
     const { stocks } = req.body;
-    
+    const userId = req.user.userId;
+
     if (!stocks || !Array.isArray(stocks) || stocks.length === 0) {
       return res.status(400).json({ error: 'Lista de acciones requerida' });
     }
 
-    // Análisis básico por acción
-    const stockAnalysis = stocks.map(stock => {
+    const client = await pool.connect();
+    let subscriptionPlan;
+    try {
+      const result = await client.query('SELECT subscription_plan FROM users WHERE id = $1', [userId]);
+      subscriptionPlan = result.rows[0]?.subscription_plan || 'free';
+    } finally {
+      client.release();
+    }
+
+    const stockAnalysisPromises = stocks.map(async (stock) => {
       const ticker = stock.toUpperCase();
-      switch(ticker) {
-        case 'NVDA':
-          return `${ticker}: Líder en IA, alta volatilidad. Peso recomendado: 25-30%`;
-        case 'MSFT':
-          return `${ticker}: Estable con exposición IA via OpenAI. Peso recomendado: 20-25%`;
-        case 'GOOGL':
-          return `${ticker}: Buen valor, competidor en IA. Peso recomendado: 15-20%`;
-        case 'TSLA':
-          return `${ticker}: Especulativo, alto riesgo/retorno. Peso recomendado: 5-10%`;
-        default:
-          return `${ticker}: Analizar fundamentales antes de asignar peso significativo`;
-      }
+      const marketData = await fetchMarketData(ticker);
+      return `${ticker}: ${marketData}. ${subscriptionPlan === 'premium' ? `Análisis Premium: Peso recomendado ${ticker === 'NVDA' ? '25-30%' : '15-20%'}.` : 'Actualiza a premium para análisis detallado.'}`;
     });
 
+    const stockAnalysis = await Promise.all(stockAnalysisPromises);
     const analysis = `Análisis de Portfolio [${stocks.join(', ')}]:
 
 ${stockAnalysis.join('\n')}
 
 Recomendaciones generales:
 • Diversificar entre semiconductores, software y aplicaciones IA
-• Mantener 10-20% en cash para oportunidades
+• Mantener 10-20% en cash
 • Rebalancear trimestralmente
-• Dollar-cost averaging en posiciones core
+• ${subscriptionPlan === 'premium' ? 'Recibe alertas en tiempo real con premium.' : 'Actualiza a premium para alertas en tiempo real.'}
 
 Riesgo del portfolio: ${stocks.length > 5 ? 'Medio' : 'Alto'} (concentración en ${stocks.length} acciones)`;
 
-    res.json({ analysis });
+    res.json({ analysis, isPremium: subscriptionPlan === 'premium' });
   } catch (error) {
     console.error('Error en análisis de portfolio:', error);
     res.status(500).json({ error: 'Error al analizar portfolio' });
@@ -322,31 +390,28 @@ Riesgo del portfolio: ${stocks.length > 5 ? 'Medio' : 'Alto'} (concentración en
 app.use((error, req, res, next) => {
   console.error('Error no manejado:', error);
   res.status(500).json({
-    error: process.env.NODE_ENV === 'production' 
-      ? 'Error interno del servidor' 
-      : error.message
+    error: process.env.NODE_ENV === 'production' ? 'Error interno del servidor' : error.message
   });
 });
 
 // Inicialización del servidor
 const startServer = async () => {
   try {
-    // Verificar conexión a base de datos
     if (process.env.DATABASE_URL) {
-      await pool.query('SELECT NOW()');
+      await pool.query('CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email VARCHAR(255) UNIQUE, name VARCHAR(255), password VARCHAR(255), subscription_plan VARCHAR(50))');
+      await pool.query('CREATE TABLE IF NOT EXISTS interactions (id SERIAL PRIMARY KEY, user_id INTEGER, message TEXT, response TEXT, created_at TIMESTAMP)');
       console.log('✅ Conexión a base de datos establecida');
     } else {
-      console.log('⚠️  Base de datos no configurada (modo desarrollo)');
+      console.log('⚠️ Base de datos no configurada (modo desarrollo)');
     }
 
-    // Iniciar servidor
     app.listen(PORT, () => {
       console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
       console.log(`📱 Entorno: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🤖 Claude IA: ${process.env.ANTHROPIC_API_KEY ? 'Habilitado' : 'Deshabilitado'}`);
+      console.log(`📈 Alpha Vantage: ${process.env.ALPHA_VANTAGE_API_KEY ? 'Habilitado' : 'Deshabilitado'}`);
       console.log(`💾 Base de datos: ${process.env.DATABASE_URL ? 'Conectada' : 'Desconectada'}`);
     });
-
   } catch (error) {
     console.error('❌ Error iniciando servidor:', error);
     process.exit(1);
