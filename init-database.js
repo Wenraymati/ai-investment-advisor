@@ -1,13 +1,17 @@
 const { Pool } = require('pg');
 
 const createTables = async () => {
+  if (!process.env.DATABASE_URL) {
+    console.log('❌ DATABASE_URL no configurada');
+    return;
+  }
+
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: { rejectUnauthorized: false }
   });
 
   try {
-    // Crear tabla de usuarios
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -15,26 +19,24 @@ const createTables = async () => {
         password VARCHAR(255) NOT NULL,
         name VARCHAR(255) NOT NULL,
         subscription_plan VARCHAR(50) DEFAULT 'free',
-        stripe_customer_id VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    // Crear tabla de chat
     await pool.query(`
       CREATE TABLE IF NOT EXISTS chat_history (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id),
         message TEXT NOT NULL,
         response TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    console.log('✅ Tablas creadas exitosamente');
+    console.log('✅ Tablas creadas');
     await pool.end();
   } catch (error) {
-    console.error('❌ Error creando tablas:', error);
+    console.error('❌ Error:', error.message);
   }
 };
 
