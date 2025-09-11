@@ -137,6 +137,65 @@ app.post('/api/login', async (req, res) => {
 app.get('/api/user-data', authenticateToken, async (req, res) => {
   try {
     const user = {
+      // Chat con Claude IA
+app.post('/api/chat', authenticateToken, async (req, res) => {
+  try {
+    const { message } = req.body;
+    const userId = req.user.userId;
+
+    if (!message || message.trim().length === 0) {
+      return res.status(400).json({ error: 'Mensaje no puede estar vacío' });
+    }
+
+    // Llamar a Claude API
+    const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-3-sonnet-20240229",
+        max_tokens: 500,
+        messages: [
+          { 
+            role: "user", 
+            content: `Eres un experto asesor de inversiones especializado en IA y computación cuántica. 
+
+Pregunta del usuario: ${message}
+
+Responde de forma profesional y práctica. Incluye:
+- Análisis específico si mencionan una acción
+- Riesgos y oportunidades 
+- Recomendaciones concretas
+- Tickers relevantes cuando aplique
+
+Mantén un tono profesional pero accesible.`
+          }
+        ]
+      })
+    });
+
+    if (!claudeResponse.ok) {
+      throw new Error('Error en Claude API');
+    }
+
+    const claudeData = await claudeResponse.json();
+    const aiResponse = claudeData.content[0].text;
+
+    console.log(`💬 Claude respondió a: ${message.substring(0, 50)}...`);
+
+    res.json({ response: aiResponse });
+  } catch (error) {
+    console.error('Error en chat:', error);
+    
+    // Fallback a respuesta básica si Claude falla
+    const fallbackResponse = `Gracias por tu consulta: "${message}". Estoy experimentando problemas técnicos temporales. Normalmente proporciono análisis detallados sobre inversiones en IA y computación cuántica.`;
+    
+    res.json({ response: fallbackResponse });
+  }
+});
       id: req.user.userId,
       email: req.user.email,
       name: req.user.email.split('@')[0],
