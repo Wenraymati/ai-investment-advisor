@@ -274,10 +274,12 @@ Basado en tu consulta sobre "${query}", como asesor financiero recomiendo:
 
 const aiSystem = new FinancialAISystem();
 
+// INICIALIZACIÓN MEJORADA DE BASE DE DATOS CON MIGRACIÓN
 async function initDatabase() {
   try {
     const client = await pool.connect();
     
+    // Crear tabla users con todas las columnas necesarias
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -285,10 +287,21 @@ async function initDatabase() {
         password VARCHAR(255) NOT NULL,
         name VARCHAR(255) NOT NULL,
         subscription_plan VARCHAR(50) DEFAULT 'free',
-        queries_used INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migrar tabla existente: agregar queries_used si no existe
+    try {
+      await client.query(`ALTER TABLE users ADD COLUMN queries_used INTEGER DEFAULT 0`);
+      console.log('✅ Columna queries_used agregada');
+    } catch (error) {
+      if (error.code === '42701') {
+        console.log('✅ Columna queries_used ya existe');
+      } else {
+        console.error('Error agregando queries_used:', error.message);
+      }
+    }
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS chat_history (
@@ -301,7 +314,7 @@ async function initDatabase() {
     `);
 
     client.release();
-    console.log('✅ Base de datos inicializada');
+    console.log('✅ Base de datos inicializada correctamente');
   } catch (error) {
     console.error('Error inicializando BD:', error);
   }
@@ -354,13 +367,20 @@ app.post('/api/register', async (req, res) => {
 
       const hashedPassword = await bcrypt.hash(password, 12);
       
+      // Insertar usuario SIN queries_used inicialmente
       const result = await client.query(`
-        INSERT INTO users (name, email, password, subscription_plan, queries_used) 
-        VALUES ($1, $2, $3, $4, $5) 
-        RETURNING id, name, email, subscription_plan, queries_used
-      `, [name.trim(), email.toLowerCase(), hashedPassword, 'free', 0]);
+        INSERT INTO users (name, email, password, subscription_plan) 
+        VALUES ($1, $2, $3, $4) 
+        RETURNING id, name, email, subscription_plan
+      `, [name.trim(), email.toLowerCase(), hashedPassword, 'free']);
 
       const newUser = result.rows[0];
+      
+      // Agregar queries_used con UPDATE por seguridad
+      await client.query('UPDATE users SET queries_used = 0 WHERE id = $1', [newUser.id]);
+      
+      // Configurar campos calculados
+      newUser.queries_used = 0;
       newUser.queries_limit = 5;
       newUser.queries_remaining = 5;
 
@@ -419,6 +439,7 @@ app.post('/api/login', async (req, res) => {
 
       const queryLimits = { free: 5, basic: 50, premium: 999 };
       user.queries_limit = queryLimits[user.subscription_plan];
+      user.queries_used = user.queries_used || 0;
       user.queries_remaining = user.queries_limit - user.queries_used;
 
       const token = jwt.sign(
@@ -467,6 +488,7 @@ app.get('/api/user-profile', authenticateToken, async (req, res) => {
       const user = result.rows[0];
       const queryLimits = { free: 5, basic: 50, premium: 999 };
       user.queries_limit = queryLimits[user.subscription_plan];
+      user.queries_used = user.queries_used || 0;
       user.queries_remaining = user.queries_limit - user.queries_used;
 
       res.json({
@@ -502,6 +524,7 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
     try {
       const result = await client.query('SELECT subscription_plan, queries_used FROM users WHERE id = $1', [userId]);
       user = result.rows[0];
+      user.queries_used = user.queries_used || 0;
     } finally {
       client.release();
     }
@@ -526,7 +549,7 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
     const updateClient = await pool.connect();
     try {
       await updateClient.query(
-        'UPDATE users SET queries_used = queries_used + 1 WHERE id = $1',
+        'UPDATE users SET queries_used = COALESCE(queries_used, 0) + 1 WHERE id = $1',
         [userId]
       );
 
