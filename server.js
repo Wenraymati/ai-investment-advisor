@@ -1,4 +1,12 @@
-<!DOCTYPE html>
+// Agregar al inicio del server.js existente
+const path = require('path');
+
+// Agregar esta ruta ANTES de las otras rutas (después de los middlewares)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Tu código existente sigue igual...<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
