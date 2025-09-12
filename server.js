@@ -26,6 +26,7 @@ console.log('=== SMARTPROIA AI FINANCIAL ADVISOR ===');
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'Configurada' : 'NO configurada');
 console.log('JWT_SECRET:', process.env.JWT_SECRET ? 'Configurada' : 'NO configurada');
 console.log('ANTHROPIC_API_KEY:', process.env.ANTHROPIC_API_KEY ? 'Configurada' : 'NO configurada');
+console.log('ALPHA_VANTAGE_API_KEY:', process.env.ALPHA_VANTAGE_API_KEY ? 'Configurada - DATOS REALES' : 'NO configurada - DATOS SIMULADOS');
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -36,7 +37,7 @@ const authenticateToken = (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret_key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
   } catch (error) {
@@ -44,37 +45,224 @@ const authenticateToken = (req, res, next) => {
   }
 };
 
-class FinancialAISystem {
+class RealMarketDataSystem {
   constructor() {
     this.marketData = new Map();
     this.lastUpdate = null;
     this.conversationContexts = new Map();
+    this.rateLimitCounter = 0;
+    this.lastApiCall = 0;
+    this.cache = new Map();
+    this.cacheTimeout = 5 * 60 * 1000; // 5 minutos de cache
   }
 
-  async fetchMarketData() {
-    const symbols = ['NVDA', 'TSLA', 'MSFT', 'GOOGL', 'BTCUSD', 'ETHUSD'];
+  // Obtener datos REALES de Alpha Vantage
+  async fetchRealMarketData() {
+    const symbols = ['NVDA', 'TSLA', 'MSFT', 'GOOGL', 'AAPL'];
+    const cryptoSymbols = ['BTC', 'ETH'];
     const results = {};
     
+    console.log('🔄 Obteniendo datos reales de mercado...');
+
+    // Obtener datos de acciones
     for (const symbol of symbols) {
-      results[symbol] = this.generateRealisticData(symbol);
+      try {
+        const stockData = await this.fetchStockData(symbol);
+        if (stockData) {
+          results[symbol] = stockData;
+        } else {
+          results[symbol] = this.getFallbackData(symbol);
+        }
+        
+        // Rate limiting - Alpha Vantage permite 5 calls/minuto
+        await this.delay(12000); // 12 segundos entre calls
+        
+      } catch (error) {
+        console.error(`Error obteniendo ${symbol}:`, error.message);
+        results[symbol] = this.getFallbackData(symbol);
+      }
     }
-    
+
+    // Obtener datos de crypto
+    for (const crypto of cryptoSymbols) {
+      try {
+        const cryptoData = await this.fetchCryptoData(crypto);
+        if (cryptoData) {
+          results[`${crypto}USD`] = cryptoData;
+        } else {
+          results[`${crypto}USD`] = this.getFallbackData(`${crypto}USD`);
+        }
+        
+        await this.delay(12000);
+        
+      } catch (error) {
+        console.error(`Error obteniendo ${crypto}:`, error.message);
+        results[`${crypto}USD`] = this.getFallbackData(`${crypto}USD`);
+      }
+    }
+
     this.marketData = new Map(Object.entries(results));
     this.lastUpdate = new Date().toISOString();
+    
+    console.log(`✅ Datos de mercado actualizados: ${this.marketData.size} símbolos`);
     return results;
   }
 
-  generateRealisticData(symbol) {
-    const baseData = {
-      'NVDA': { basePrice: 421.50, volatility: 0.035 },
-      'TSLA': { basePrice: 243.20, volatility: 0.045 },
-      'MSFT': { basePrice: 381.90, volatility: 0.020 },
-      'GOOGL': { basePrice: 135.40, volatility: 0.025 },
-      'BTCUSD': { basePrice: 63420, volatility: 0.050 },
-      'ETHUSD': { basePrice: 2847, volatility: 0.055 }
+  async fetchStockData(symbol) {
+    if (!process.env.ALPHA_VANTAGE_API_KEY) {
+      return null;
+    }
+
+    // Verificar cache
+    const cacheKey = `stock_${symbol}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+      console.log(`📋 Usando cache para ${symbol}`);
+      return cached.data;
+    }
+
+    try {
+      const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${process.env.ALPHA_VANTAGE_API_KEY}`;
+      
+      console.log(`🔍 Obteniendo datos reales de ${symbol}...`);
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data['Error Message']) {
+        console.error(`API Error para ${symbol}:`, data['Error Message']);
+        return null;
+      }
+
+      if (data['Note']) {
+        console.warn(`API Rate Limit para ${symbol}:`, data['Note']);
+        return null;
+      }
+
+      const quote = data['Global Quote'];
+      if (!quote || !quote['05. price']) {
+        console.error(`Datos incompletos para ${symbol}:`, data);
+        return null;
+      }
+
+      const price = parseFloat(quote['05. price']);
+      const change = parseFloat(quote['09. change']);
+      const changePercent = parseFloat(quote['10. change percent'].replace('%', ''));
+      const volume = quote['06. volume'];
+      const high = parseFloat(quote['03. high']);
+      const low = parseFloat(quote['04. low']);
+
+      const stockData = {
+        price: price,
+        change: change,
+        changePercent: changePercent,
+        volume: parseInt(volume),
+        high: high,
+        low: low,
+        lastUpdate: quote['07. latest trading day'],
+        source: 'alpha_vantage_real'
+      };
+
+      // Guardar en cache
+      this.cache.set(cacheKey, {
+        data: stockData,
+        timestamp: Date.now()
+      });
+
+      console.log(`✅ ${symbol}: $${price} (${changePercent > 0 ? '+' : ''}${changePercent}%) - REAL`);
+      return stockData;
+
+    } catch (error) {
+      console.error(`Error de red para ${symbol}:`, error.message);
+      return null;
+    }
+  }
+
+  async fetchCryptoData(crypto) {
+    if (!process.env.ALPHA_VANTAGE_API_KEY) {
+      return null;
+    }
+
+    const cacheKey = `crypto_${crypto}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+      console.log(`📋 Usando cache para ${crypto}`);
+      return cached.data;
+    }
+
+    try {
+      const url = `https://www.alphavantage.co/query?function=DIGITAL_CURRENCY_DAILY&symbol=${crypto}&market=USD&apikey=${process.env.ALPHA_VANTAGE_API_KEY}`;
+      
+      console.log(`🔍 Obteniendo datos reales de ${crypto}...`);
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data['Error Message'] || data['Note']) {
+        console.error(`API Error para ${crypto}:`, data['Error Message'] || data['Note']);
+        return null;
+      }
+
+      const timeSeries = data['Time Series (Digital Currency Daily)'];
+      if (!timeSeries) {
+        console.error(`No hay datos de serie temporal para ${crypto}`);
+        return null;
+      }
+
+      // Obtener el día más reciente
+      const dates = Object.keys(timeSeries).sort().reverse();
+      const latestDate = dates[0];
+      const latestData = timeSeries[latestDate];
+
+      if (!latestData) {
+        console.error(`No hay datos para la fecha más reciente de ${crypto}`);
+        return null;
+      }
+
+      const price = parseFloat(latestData['4a. close (USD)']);
+      const high = parseFloat(latestData['2a. high (USD)']);
+      const low = parseFloat(latestData['3a. low (USD)']);
+      const open = parseFloat(latestData['1a. open (USD)']);
+      const change = price - open;
+      const changePercent = (change / open) * 100;
+
+      const cryptoData = {
+        price: price,
+        change: change,
+        changePercent: changePercent,
+        volume: parseFloat(latestData['5. volume']),
+        high: high,
+        low: low,
+        lastUpdate: latestDate,
+        source: 'alpha_vantage_real'
+      };
+
+      this.cache.set(cacheKey, {
+        data: cryptoData,
+        timestamp: Date.now()
+      });
+
+      console.log(`✅ ${crypto}: $${price.toLocaleString()} (${changePercent > 0 ? '+' : ''}${changePercent.toFixed(2)}%) - REAL`);
+      return cryptoData;
+
+    } catch (error) {
+      console.error(`Error de red para ${crypto}:`, error.message);
+      return null;
+    }
+  }
+
+  getFallbackData(symbol) {
+    console.log(`⚠️ Usando datos de respaldo para ${symbol}`);
+    
+    const fallbackData = {
+      'NVDA': { basePrice: 177.17, volatility: 0.02 },
+      'TSLA': { basePrice: 368.81, volatility: 0.03 },
+      'MSFT': { basePrice: 445.50, volatility: 0.015 },
+      'GOOGL': { basePrice: 165.80, volatility: 0.02 },
+      'AAPL': { basePrice: 225.00, volatility: 0.018 },
+      'BTCUSD': { basePrice: 60000, volatility: 0.04 },
+      'ETHUSD': { basePrice: 2500, volatility: 0.05 }
     };
 
-    const config = baseData[symbol] || { basePrice: 100, volatility: 0.030 };
+    const config = fallbackData[symbol] || { basePrice: 100, volatility: 0.02 };
     const randomChange = (Math.random() - 0.5) * config.volatility * 2;
     const currentPrice = config.basePrice * (1 + randomChange);
     const change = currentPrice - config.basePrice;
@@ -85,10 +273,15 @@ class FinancialAISystem {
       change: parseFloat(change.toFixed(2)),
       changePercent: parseFloat(changePercent.toFixed(2)),
       volume: Math.floor(Math.random() * 50000000) + 10000000,
-      high: parseFloat((currentPrice * 1.03).toFixed(2)),
-      low: parseFloat((currentPrice * 0.97).toFixed(2)),
-      lastUpdate: new Date().toISOString().split('T')[0]
+      high: parseFloat((currentPrice * 1.02).toFixed(2)),
+      low: parseFloat((currentPrice * 0.98).toFixed(2)),
+      lastUpdate: new Date().toISOString().split('T')[0],
+      source: 'fallback_simulated'
     };
+  }
+
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   calculateTechnicals(priceData) {
@@ -96,17 +289,22 @@ class FinancialAISystem {
     const high = priceData.high;
     const low = priceData.low;
     
-    const rsi = 30 + (priceData.changePercent + 5) * 4;
-    const support = low * 0.98;
-    const resistance = high * 1.02;
+    // RSI simplificado basado en cambio de precio
+    const rsi = 50 + (priceData.changePercent * 2);
+    const clampedRSI = Math.max(10, Math.min(90, rsi));
+    
+    const support = low * 0.97;
+    const resistance = high * 1.03;
     const volatility = Math.abs(priceData.changePercent);
     
     return {
-      rsi: Math.max(0, Math.min(100, rsi)).toFixed(1),
+      rsi: clampedRSI.toFixed(1),
       support: support.toFixed(2),
       resistance: resistance.toFixed(2),
       volatility: volatility.toFixed(2),
-      trend: priceData.changePercent > 1 ? 'bullish' : priceData.changePercent < -1 ? 'bearish' : 'neutral'
+      trend: priceData.changePercent > 1 ? 'bullish' : priceData.changePercent < -1 ? 'bearish' : 'neutral',
+      lastUpdate: priceData.lastUpdate,
+      dataSource: priceData.source
     };
   }
 
@@ -115,7 +313,8 @@ class FinancialAISystem {
       'nvidia': 'NVDA', 'nvda': 'NVDA',
       'tesla': 'TSLA', 'tsla': 'TSLA',
       'microsoft': 'MSFT', 'msft': 'MSFT',
-      'google': 'GOOGL', 'googl': 'GOOGL',
+      'google': 'GOOGL', 'googl': 'GOOGL', 'alphabet': 'GOOGL',
+      'apple': 'AAPL', 'aapl': 'AAPL',
       'bitcoin': 'BTCUSD', 'btc': 'BTCUSD',
       'ethereum': 'ETHUSD', 'eth': 'ETHUSD'
     };
@@ -132,14 +331,13 @@ class FinancialAISystem {
     return Array.from(mentioned);
   }
 
-  async generateAnalysis(query, userId, userPlan = 'free') {
+  async generateProfessionalAnalysis(query, userId, userPlan = 'free') {
     if (!process.env.ANTHROPIC_API_KEY) {
       return this.generateFallbackAnalysis(query);
     }
 
     try {
-      await this.fetchMarketData();
-      
+      // Obtener datos actualizados (usará cache si es reciente)
       const mentionedSymbols = this.extractSymbols(query);
       const relevantData = {};
       
@@ -150,10 +348,27 @@ class FinancialAISystem {
             ...priceData,
             technicals: this.calculateTechnicals(priceData)
           };
+        } else {
+          // Si no tenemos datos, obtener específicamente para este símbolo
+          let freshData = null;
+          if (symbol.endsWith('USD')) {
+            const crypto = symbol.replace('USD', '');
+            freshData = await this.fetchCryptoData(crypto);
+          } else {
+            freshData = await this.fetchStockData(symbol);
+          }
+          
+          if (freshData) {
+            relevantData[symbol] = {
+              ...freshData,
+              technicals: this.calculateTechnicals(freshData)
+            };
+          }
         }
       }
 
       if (mentionedSymbols.length === 0) {
+        // Análisis general con datos principales
         ['NVDA', 'TSLA', 'MSFT', 'BTCUSD'].forEach(symbol => {
           if (this.marketData.has(symbol)) {
             const priceData = this.marketData.get(symbol);
@@ -165,7 +380,7 @@ class FinancialAISystem {
         });
       }
 
-      const prompt = this.buildPrompt(query, relevantData, userPlan);
+      const prompt = this.buildProfessionalPrompt(query, relevantData, userPlan);
 
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -176,7 +391,7 @@ class FinancialAISystem {
         },
         body: JSON.stringify({
           model: userPlan === 'premium' ? 'claude-3-sonnet-20240229' : 'claude-3-haiku-20240307',
-          max_tokens: userPlan === 'premium' ? 700 : 500,
+          max_tokens: userPlan === 'premium' ? 800 : 500,
           messages: [{ role: 'user', content: prompt }]
         })
       });
@@ -189,97 +404,87 @@ class FinancialAISystem {
       return data.content[0].text;
 
     } catch (error) {
-      console.error('Error en análisis:', error);
+      console.error('Error en análisis profesional:', error);
       return this.generateFallbackAnalysis(query);
     }
   }
 
-  buildPrompt(query, marketData, userPlan) {
-    const currentDate = new Date().toISOString().split('T')[0];
+  buildProfessionalPrompt(query, marketData, userPlan) {
+    const currentDate = new Date().toLocaleString('es-ES', { 
+      timeZone: 'America/Santiago',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
     const marketDataText = Object.entries(marketData).map(([symbol, data]) => {
-      return `${symbol}: $${data.price} (${data.changePercent > 0 ? '+' : ''}${data.changePercent}%) | RSI: ${data.technicals.rsi} | Trend: ${data.technicals.trend} | Support: $${data.technicals.support} | Resistance: $${data.technicals.resistance}`;
+      const source = data.technicals?.dataSource === 'alpha_vantage_real' ? '[DATOS REALES]' : '[SIMULADO]';
+      return `${symbol}: $${data.price.toLocaleString()} (${data.changePercent > 0 ? '+' : ''}${data.changePercent}%) | RSI: ${data.technicals.rsi} | Soporte: $${data.technicals.support} | Resistencia: $${data.technicals.resistance} | Actualizado: ${data.lastUpdate} ${source}`;
     }).join('\n');
 
-    return `Eres un asesor financiero senior con 20+ años de experiencia, especializado en análisis cuantitativo, IA y tecnología.
+    return `Eres un asesor financiero senior certificado (CFA) con 20+ años de experiencia en Wall Street. Trabajaste en Goldman Sachs, JP Morgan y fundos hedge. Especialista en análisis cuantitativo, IA, tecnología y mercados emergentes.
 
-FECHA: ${currentDate}
-PLAN USUARIO: ${userPlan.toUpperCase()}
+FECHA Y HORA: ${currentDate}
+PLAN DEL USUARIO: ${userPlan.toUpperCase()}
 
-DATOS DE MERCADO EN TIEMPO REAL:
-${marketDataText}
+DATOS DE MERCADO ACTUALIZADOS:
+${marketDataText || 'No hay datos específicos disponibles para esta consulta.'}
 
-CONSULTA: "${query}"
+CONSULTA DEL CLIENTE: "${query}"
 
-INSTRUCCIONES:
-1. Analiza con los datos exactos proporcionados arriba
-2. Da recomendaciones específicas con precios de entrada/salida
-3. Incluye análisis técnico basado en RSI, soporte/resistencia
-4. Menciona riesgos específicos del momento actual
-5. ${userPlan === 'premium' ? 'PREMIUM: Incluye múltiples escenarios y análisis avanzado' : 'BÁSICO: Mantén análisis conciso pero valioso'}
-6. NO inventes datos - usa solo los proporcionados
-7. Timeframe específico para recomendaciones
+INSTRUCCIONES CRÍTICAS:
+1. SOLO usa los datos exactos proporcionados arriba - NO inventes precios
+2. Si los datos muestran [DATOS REALES], menciona que son precios actuales del mercado
+3. Si muestran [SIMULADO], advierte que son datos de demostración
+4. Da recomendaciones específicas: precios de entrada, stop-loss, targets
+5. Incluye análisis técnico real basado en RSI, soportes, resistencias mostrados
+6. Identifica riesgos específicos del momento y contexto macro actual
+7. ${userPlan === 'premium' ? 'PREMIUM: Incluye múltiples escenarios, correlaciones, sizing de posición' : 'BÁSICO: Análisis conciso pero actionable'}
+8. Timeframes específicos para cada recomendación
+9. Si no tienes datos suficientes, dilo claramente
 
-FORMATO:
-📊 ANÁLISIS [SÍMBOLO]
-💰 PRECIO ACTUAL Y TÉCNICOS  
-📈 ESCENARIO PROBABLE
-⚠️ RIESGOS PRINCIPALES
-🎯 RECOMENDACIÓN ESPECÍFICA
-⏰ TIMEFRAME
+ESTRUCTURA OBLIGATORIA:
+📊 ANÁLISIS [SÍMBOLO ESPECÍFICO]
+💰 PRECIO ACTUAL Y INDICADORES TÉCNICOS
+📈 ESCENARIO MÁS PROBABLE
+⚠️ RIESGOS PRINCIPALES IDENTIFICADOS
+🎯 RECOMENDACIÓN ESPECÍFICA (entrada/stop/target)
+⏰ TIMEFRAME Y SEGUIMIENTO
+💡 DISCLAIMER PROFESIONAL
 
-Máximo ${userPlan === 'premium' ? '500' : '300'} palabras.`;
+TONO: Directo, basado en datos, sin generalidades. Como un analista institucional.
+LONGITUD: Máximo ${userPlan === 'premium' ? '600' : '350'} palabras.
+
+IMPORTANTE: Basa tu respuesta ÚNICAMENTE en los datos de mercado proporcionados arriba.`;
   }
 
   generateFallbackAnalysis(query) {
-    const lowerQuery = query.toLowerCase();
-    
-    if (lowerQuery.includes('nvidia') || lowerQuery.includes('nvda')) {
-      return `📊 ANÁLISIS NVIDIA (NVDA)
+    return `📊 ANÁLISIS TEMPORAL NO DISPONIBLE
 
-Como asesor financiero, NVIDIA presenta una oportunidad interesante pero con riesgos significativos:
+La consulta "${query}" no puede ser procesada con datos de mercado en tiempo real en este momento.
 
-📈 FORTALEZAS:
-• Dominio absoluto en chips de IA (90%+ market share)
-• Crecimiento explosivo en revenue (+200% YoY)
-• Moat tecnológico con ecosistema CUDA
+⚠️ SISTEMA EN MODO LIMITADO:
+• APIs de datos financieros experimentando latencia
+• Análisis de IA temporalmente restringido
+• Recomendaciones específicas no disponibles
 
-⚠️ RIESGOS PRINCIPALES:
-• Valoración extremadamente elevada (P/E >60x)
-• Dependencia total del boom de IA
-• Competencia emergente (AMD, Intel, chips custom)
+🔄 RECOMENDACIÓN:
+Intenta nuevamente en unos minutos. Para análisis profesionales confiables, necesitamos datos de mercado actualizados.
 
-🎯 RECOMENDACIÓN:
-Entrada gradual en correcciones del 15-20%. No más del 10% del portfolio debido a alta concentración de riesgo.
-
-⏰ TIMEFRAME: 12-18 meses para materializar potencial, pero espera alta volatilidad.`;
-    }
-
-    return `📊 ANÁLISIS GENERAL
-
-Basado en tu consulta sobre "${query}", como asesor financiero recomiendo:
-
-📈 CONTEXTO ACTUAL:
-• Mercado tech consolidando tras rally de IA
-• Oportunidades en correcciones del 10-15%
-• Diversificación es clave ante incertidumbre
-
-🎯 ESTRATEGIA RECOMENDADA:
-• Dollar Cost Average en líderes del sector
-• Mantén 20% cash para oportunidades
-• Stop-loss del 15-20% en posiciones individuales
-
-⏰ Actualiza a plan premium para análisis específicos con datos en tiempo real y recomendaciones detalladas.`;
+💡 Mientras tanto, puedes consultar fuentes como Yahoo Finance, Bloomberg o TradingView para precios actuales.`;
   }
 }
 
-const aiSystem = new FinancialAISystem();
+// Instancia global del sistema
+const marketSystem = new RealMarketDataSystem();
 
-// INICIALIZACIÓN MEJORADA DE BASE DE DATOS CON MIGRACIÓN
+// Inicialización de base de datos
 async function initDatabase() {
   try {
     const client = await pool.connect();
     
-    // Crear tabla users con todas las columnas necesarias
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -291,15 +496,12 @@ async function initDatabase() {
       )
     `);
 
-    // Migrar tabla existente: agregar queries_used si no existe
     try {
       await client.query(`ALTER TABLE users ADD COLUMN queries_used INTEGER DEFAULT 0`);
       console.log('✅ Columna queries_used agregada');
     } catch (error) {
       if (error.code === '42701') {
         console.log('✅ Columna queries_used ya existe');
-      } else {
-        console.error('Error agregando queries_used:', error.message);
       }
     }
 
@@ -309,23 +511,28 @@ async function initDatabase() {
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         message TEXT NOT NULL,
         response TEXT NOT NULL,
+        market_data JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
     client.release();
-    console.log('✅ Base de datos inicializada correctamente');
+    console.log('✅ Base de datos inicializada');
   } catch (error) {
     console.error('Error inicializando BD:', error);
   }
 }
 
+// RUTAS API
+
 app.get('/', (req, res) => {
   res.json({
     service: 'SmartProIA - Professional AI Financial Advisor',
     status: 'operational',
-    version: '3.0',
-    features: ['Real-time analysis', 'Technical indicators', 'Professional AI'],
+    version: '3.1 - REAL DATA',
+    features: ['Real-time market data via Alpha Vantage', 'Professional Claude analysis', 'Technical indicators'],
+    dataSource: process.env.ALPHA_VANTAGE_API_KEY ? 'Real market data' : 'Simulated data',
+    lastMarketUpdate: marketSystem.lastUpdate,
     timestamp: new Date().toISOString()
   });
 });
@@ -335,12 +542,14 @@ app.get('/api/health', (req, res) => {
     status: 'healthy',
     services: {
       database: process.env.DATABASE_URL ? 'connected' : 'disconnected',
-      claude_ai: process.env.ANTHROPIC_API_KEY ? 'professional' : 'fallback',
-      market_data: 'simulated'
+      claude_ai: process.env.ANTHROPIC_API_KEY ? 'professional' : 'unavailable',
+      market_data: process.env.ALPHA_VANTAGE_API_KEY ? 'alpha_vantage_real' : 'simulated_fallback'
     },
     marketData: {
-      lastUpdate: aiSystem.lastUpdate,
-      symbols: aiSystem.marketData.size
+      lastUpdate: marketSystem.lastUpdate,
+      symbolsTracked: marketSystem.marketData.size,
+      cacheSize: marketSystem.cache.size,
+      dataSource: process.env.ALPHA_VANTAGE_API_KEY ? 'Alpha Vantage API' : 'Fallback simulation'
     }
   });
 });
@@ -367,7 +576,6 @@ app.post('/api/register', async (req, res) => {
 
       const hashedPassword = await bcrypt.hash(password, 12);
       
-      // Insertar usuario SIN queries_used inicialmente
       const result = await client.query(`
         INSERT INTO users (name, email, password, subscription_plan) 
         VALUES ($1, $2, $3, $4) 
@@ -376,17 +584,15 @@ app.post('/api/register', async (req, res) => {
 
       const newUser = result.rows[0];
       
-      // Agregar queries_used con UPDATE por seguridad
       await client.query('UPDATE users SET queries_used = 0 WHERE id = $1', [newUser.id]);
       
-      // Configurar campos calculados
       newUser.queries_used = 0;
       newUser.queries_limit = 5;
       newUser.queries_remaining = 5;
 
       const token = jwt.sign(
         { userId: newUser.id, email: newUser.email },
-        process.env.JWT_SECRET || 'fallback_secret_key',
+        process.env.JWT_SECRET,
         { expiresIn: '30d' }
       );
 
@@ -444,7 +650,7 @@ app.post('/api/login', async (req, res) => {
 
       const token = jwt.sign(
         { userId: user.id, email: user.email },
-        process.env.JWT_SECRET || 'fallback_secret_key',
+        process.env.JWT_SECRET,
         { expiresIn: '30d' }
       );
 
@@ -494,9 +700,10 @@ app.get('/api/user-profile', authenticateToken, async (req, res) => {
       res.json({
         user: user,
         features: {
-          real_time_data: true,
+          real_time_data: process.env.ALPHA_VANTAGE_API_KEY ? true : false,
           technical_analysis: true,
-          professional_ai: process.env.ANTHROPIC_API_KEY ? true : false
+          professional_ai: process.env.ANTHROPIC_API_KEY ? true : false,
+          data_source: process.env.ALPHA_VANTAGE_API_KEY ? 'Alpha Vantage Real Data' : 'Simulated Data'
         }
       });
 
@@ -544,7 +751,8 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
       });
     }
 
-    const response = await aiSystem.generateAnalysis(message, userId, user.subscription_plan);
+    // Generar análisis con datos reales
+    const response = await marketSystem.generateProfessionalAnalysis(message, userId, user.subscription_plan);
 
     const updateClient = await pool.connect();
     try {
@@ -553,68 +761,117 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
         [userId]
       );
 
+      // Guardar historial con datos de mercado
       await updateClient.query(
-        'INSERT INTO chat_history (user_id, message, response) VALUES ($1, $2, $3)',
-        [userId, message, response]
+        'INSERT INTO chat_history (user_id, message, response, market_data) VALUES ($1, $2, $3, $4)',
+        [userId, message, response, JSON.stringify(Object.fromEntries(marketSystem.marketData))]
       );
     } finally {
       updateClient.release();
     }
 
-    console.log(`💬 Análisis procesado para usuario ${userId}`);
+    console.log(`💬 Análisis profesional con datos reales procesado para usuario ${userId}`);
 
     res.json({
       response,
       queries_remaining: userLimit - (user.queries_used + 1),
       plan: user.subscription_plan,
-      upgrade_available: user.subscription_plan === 'free'
+      upgrade_available: user.subscription_plan === 'free',
+      market_data_timestamp: marketSystem.lastUpdate,
+      data_source: process.env.ALPHA_VANTAGE_API_KEY ? 'Alpha Vantage Real Data' : 'Simulated'
     });
 
   } catch (error) {
-    console.error('Error en chat:', error);
-    res.status(500).json({ error: 'Error procesando análisis' });
+    console.error('Error en chat profesional:', error);
+    res.status(500).json({ error: 'Error procesando análisis profesional' });
   }
 });
 
+// Endpoint para obtener datos de mercado actualizados
 app.get('/api/market-data', authenticateToken, async (req, res) => {
   try {
-    await aiSystem.fetchMarketData();
+    // Solo actualizar si han pasado más de 5 minutos
+    const shouldUpdate = !marketSystem.lastUpdate || 
+                        (Date.now() - new Date(marketSystem.lastUpdate).getTime()) > 5 * 60 * 1000;
+    
+    if (shouldUpdate) {
+      console.log('🔄 Actualizando datos de mercado...');
+      await marketSystem.fetchRealMarketData();
+    }
+    
+    const marketData = Object.fromEntries(marketSystem.marketData);
     
     res.json({
-      data: Object.fromEntries(aiSystem.marketData),
-      lastUpdate: aiSystem.lastUpdate,
-      source: 'simulated'
+      data: marketData,
+      lastUpdate: marketSystem.lastUpdate,
+      source: process.env.ALPHA_VANTAGE_API_KEY ? 'alpha_vantage_real' : 'simulated',
+      cacheSize: marketSystem.cache.size,
+      symbolsCount: Object.keys(marketData).length
     });
   } catch (error) {
-    console.error('Error obteniendo datos:', error);
-    res.status(500).json({ error: 'Error obteniendo datos' });
+    console.error('Error obteniendo datos de mercado:', error);
+    res.status(500).json({ error: 'Error obteniendo datos de mercado' });
+  }
+});
+
+// Endpoint para forzar actualización de datos (solo para testing)
+app.post('/api/refresh-market-data', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔄 Actualizacion forzada de datos de mercado...');
+    const updatedData = await marketSystem.fetchRealMarketData();
+    
+    res.json({
+      message: 'Datos de mercado actualizados',
+      data: updatedData,
+      lastUpdate: marketSystem.lastUpdate,
+      source: process.env.ALPHA_VANTAGE_API_KEY ? 'alpha_vantage_real' : 'simulated'
+    });
+  } catch (error) {
+    console.error('Error actualizando datos:', error);
+    res.status(500).json({ error: 'Error actualizando datos de mercado' });
   }
 });
 
 const startServer = async () => {
   try {
     await initDatabase();
-    await aiSystem.fetchMarketData();
+    
+    // Inicializar con datos de mercado reales al arrancar
+    console.log('🚀 Inicializando sistema con datos de mercado...');
+    await marketSystem.fetchRealMarketData();
     
     app.listen(PORT, () => {
-      console.log(`🚀 SmartProIA Professional v3.0 - Puerto ${PORT}`);
-      console.log(`🧠 Claude IA: ${process.env.ANTHROPIC_API_KEY ? 'Habilitado' : 'Modo fallback'}`);
-      console.log(`📊 Datos: Simulados (${aiSystem.marketData.size} símbolos)`);
-      console.log(`💾 Base de datos: ${process.env.DATABASE_URL ? 'Conectada' : 'Desconectada'}`);
-      console.log('=== SISTEMA OPERACIONAL ===');
+      console.log(`🚀 SmartProIA Professional v3.1 - Puerto ${PORT}`);
+      console.log(`🧠 Claude IA: ${process.env.ANTHROPIC_API_KEY ? 'Habilitado' : 'Deshabilitado'}`);
+      console.log(`📊 Alpha Vantage: ${process.env.ALPHA_VANTAGE_API_KEY ? 'DATOS REALES habilitados' : 'Solo datos simulados'}`);
+      console.log(`💾 Base de datos: ${process.env.DATABASE_URL ? 'PostgreSQL conectada' : 'Desconectada'}`);
+      console.log(`📈 Símbolos rastreados: ${marketSystem.marketData.size}`);
+      console.log(`⏰ Última actualización: ${marketSystem.lastUpdate}`);
+      console.log('=== SISTEMA PROFESIONAL CON DATOS REALES ===');
     });
 
   } catch (error) {
-    console.error('❌ Error iniciando:', error);
+    console.error('❌ Error crítico al iniciar:', error);
     process.exit(1);
   }
 };
 
+// Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('🛑 Cerrando servidor...');
   if (pool) await pool.end();
   process.exit(0);
 });
+
+// Actualización periódica de datos cada 30 minutos
+setInterval(async () => {
+  try {
+    console.log('🔄 Actualización automática de datos de mercado...');
+    await marketSystem.fetchRealMarketData();
+  } catch (error) {
+    console.error('Error en actualización automática:', error);
+  }
+}, 30 * 60 * 1000); // 30 minutos
 
 startServer();
 
