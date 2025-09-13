@@ -1,0 +1,1399 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartProIA Ultra - Dashboard IA</title>
+    <meta name="description" content="Dashboard ultra-inteligente para análisis de inversiones con IA">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --primary-dark: #1d4ed8;
+            --secondary: #10b981;
+            --accent: #f59e0b;
+            --danger: #ef4444;
+            --success: #10b981;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8fafc;
+            --bg-dark: #1e293b;
+            --border: #e2e8f0;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        /* Sidebar Ultra-Moderno */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 280px;
+            height: 100vh;
+            background: linear-gradient(135deg, var(--bg-dark), #334155);
+            color: white;
+            padding: 2rem 0;
+            z-index: 1000;
+            transition: var(--transition);
+            overflow-y: auto;
+        }
+
+        .sidebar.collapsed {
+            width: 80px;
+        }
+
+        .sidebar-header {
+            padding: 0 2rem;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .sidebar.collapsed .sidebar-header span {
+            display: none;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .toggle-sidebar {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: var(--transition);
+        }
+
+        .toggle-sidebar:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .nav-menu {
+            list-style: none;
+        }
+
+        .nav-item {
+            margin: 0.5rem 1rem;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            border-radius: 12px;
+            transition: var(--transition);
+            position: relative;
+        }
+
+        .nav-link:hover,
+        .nav-link.active {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .nav-link.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 4px;
+            height: 60%;
+            background: var(--secondary);
+            border-radius: 0 4px 4px 0;
+        }
+
+        .sidebar.collapsed .nav-link span {
+            display: none;
+        }
+
+        .nav-badge {
+            background: var(--danger);
+            color: white;
+            font-size: 0.75rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 10px;
+            margin-left: auto;
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: 280px;
+            min-height: 100vh;
+            transition: var(--transition);
+        }
+
+        .main-content.expanded {
+            margin-left: 80px;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-primary);
+            padding: 1rem 2rem;
+            box-shadow: var(--shadow);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .header-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-secondary);
+            border-radius: 25px;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .user-info:hover {
+            box-shadow: var(--shadow);
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+        }
+
+        .plan-badge {
+            background: linear-gradient(135deg, var(--accent), #f97316);
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        /* Content Area */
+        .content {
+            padding: 2rem;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-primary);
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .stat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .stat-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: white;
+        }
+
+        .stat-icon.primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); }
+        .stat-icon.success { background: linear-gradient(135deg, var(--success), #047857); }
+        .stat-icon.warning { background: linear-gradient(135deg, var(--accent), #d97706); }
+        .stat-icon.danger { background: linear-gradient(135deg, var(--danger), #dc2626); }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 800;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .stat-change {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        .stat-change.positive { color: var(--success); }
+        .stat-change.negative { color: var(--danger); }
+
+        /* Chat Interface Ultra */
+        .chat-section {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .chat-container {
+            background: var(--bg-primary);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 600px;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 1.5rem;
+            overflow-y: auto;
+            background: linear-gradient(135deg, #f8fafc, #ffffff);
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .message {
+            margin-bottom: 1.5rem;
+            animation: slideIn 0.3s ease;
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message-bubble {
+            display: inline-block;
+            max-width: 80%;
+            padding: 1rem 1.5rem;
+            border-radius: 18px;
+            line-height: 1.5;
+            position: relative;
+        }
+
+        .message.user .message-bubble {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            border-bottom-right-radius: 6px;
+        }
+
+        .message.ai .message-bubble {
+            background: white;
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 6px;
+            box-shadow: var(--shadow);
+        }
+
+        .message-time {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+            opacity: 0.7;
+        }
+
+        .typing-indicator {
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 3px;
+        }
+
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--text-secondary);
+            border-radius: 50%;
+            animation: typingDots 1.5s ease-in-out infinite;
+        }
+
+        .typing-dot:nth-child(1) { animation-delay: 0s; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        .chat-input-container {
+            padding: 1rem 1.5rem;
+            background: white;
+            border-top: 1px solid var(--border);
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-end;
+        }
+
+        .input-wrapper {
+            flex: 1;
+            position: relative;
+        }
+
+        .chat-textarea {
+            width: 100%;
+            min-height: 50px;
+            max-height: 120px;
+            padding: 1rem;
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            resize: none;
+            font-family: inherit;
+            font-size: 1rem;
+            line-height: 1.4;
+            transition: var(--transition);
+        }
+
+        .chat-textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .send-button {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: var(--transition);
+            flex-shrink: 0;
+        }
+
+        .send-button:hover {
+            transform: scale(1.05);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .send-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Market Data Panel */
+        .market-panel {
+            background: var(--bg-primary);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            padding: 1.5rem;
+            height: fit-content;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .refresh-btn {
+            background: none;
+            border: 1px solid var(--border);
+            padding: 0.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: var(--transition);
+        }
+
+        .refresh-btn:hover {
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .market-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .market-item:last-child {
+            border-bottom: none;
+        }
+
+        .market-symbol {
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .market-price {
+            text-align: right;
+        }
+
+        .price-value {
+            font-weight: 700;
+            font-size: 1rem;
+        }
+
+        .price-change {
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .price-change.positive { color: var(--success); }
+        .price-change.negative { color: var(--danger); }
+
+        /* Quick Actions */
+        .quick-actions {
+            background: var(--bg-primary);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow);
+        }
+
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .action-btn {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem 1.5rem;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            text-decoration: none;
+            color: var(--text-primary);
+            transition: var(--transition);
+            cursor: pointer;
+        }
+
+        .action-btn:hover {
+            border-color: var(--primary);
+            background: white;
+            transform: translateY(-2px);
+            box-shadow: var(--shadow);
+        }
+
+        .action-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            color: white;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .chat-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.mobile-open {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                padding: 1rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header {
+                padding: 1rem;
+            }
+            
+            .chat-container {
+                height: 500px;
+            }
+        }
+
+        /* Animations */
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        @keyframes typingDots {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-10px); opacity: 1; }
+        }
+
+        /* Loading States */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+        }
+
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 3rem;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 500px;
+            position: relative;
+            box-shadow: 0 50px 100px rgba(0, 0, 0, 0.3);
+        }
+
+        .close {
+            position: absolute;
+            right: 1.5rem;
+            top: 1.5rem;
+            font-size: 2rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: var(--transition);
+        }
+
+        .close:hover {
+            color: var(--text-primary);
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <i class="fas fa-brain"></i>
+                <span>SmartProIA</span>
+            </div>
+            <button class="toggle-sidebar" onclick="toggleSidebar()">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+        
+        <nav>
+            <ul class="nav-menu">
+                <li class="nav-item">
+                    <a href="#" class="nav-link active">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link">
+                        <i class="fas fa-robot"></i>
+                        <span>IA Ultra Chat</span>
+                        <span class="nav-badge" id="unreadMessages">0</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link">
+                        <i class="fas fa-briefcase"></i>
+                        <span>Portfolio</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link">
+                        <i class="fas fa-bell"></i>
+                        <span>Alertas</span>
+                        <span class="nav-badge" id="activeAlerts">3</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link">
+                        <i class="fas fa-chart-candlestick"></i>
+                        <span>Mercado</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link">
+                        <i class="fas fa-cog"></i>
+                        <span>Configuración</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content" id="mainContent">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1>Dashboard Ultra-Inteligente</h1>
+                <p class="header-subtitle">Análisis de mercado en tiempo real con IA</p>
+            </div>
+            <div class="header-right">
+                <div class="user-info">
+                    <div class="user-avatar" id="userAvatar">U</div>
+                    <div>
+                        <div id="userName">Usuario</div>
+                        <div class="plan-badge" id="userPlan">FREE</div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content -->
+        <div class="content">
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-icon primary">
+                            <i class="fas fa-brain"></i>
+                        </div>
+                    </div>
+                    <div class="stat-value" id="totalAnalysis">0</div>
+                    <div class="stat-label">Análisis IA Ultra</div>
+                    <div class="stat-change positive">
+                        <i class="fas fa-arrow-up"></i>
+                        <span>+12% esta semana</span>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-icon success">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                    </div>
+                    <div class="stat-value">97.2%</div>
+                    <div class="stat-label">Precisión IA</div>
+                    <div class="stat-change positive">
+                        <i class="fas fa-arrow-up"></i>
+                        <span>+5.2% este mes</span>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-icon warning">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                    </div>
+                    <div class="stat-value">15s</div>
+                    <div class="stat-label">Tiempo Respuesta</div>
+                    <div class="stat-change positive">
+                        <i class="fas fa-arrow-down"></i>
+                        <span>-2s optimizado</span>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-icon primary">
+                            <i class="fas fa-coins"></i>
+                        </div>
+                    </div>
+                    <div class="stat-value" id="queriesRemaining">5</div>
+                    <div class="stat-label">Consultas Restantes</div>
+                    <div class="stat-change" id="queryChange">
+                        <i class="fas fa-info-circle"></i>
+                        <span>Resets diariamente</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <h3 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="fas fa-bolt"></i>
+                    Acciones Rápidas Ultra
+                </h3>
+                <div class="actions-grid">
+                    <button class="action-btn" onclick="quickAnalysis('NVDA')">
+                        <div class="action-icon primary">
+                            <i class="fas fa-microchip"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 600;">Analizar NVIDIA</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Análisis técnico completo</div>
+                        </div>
+                    </button>
+                    
+                    <button class="action-btn" onclick="quickAnalysis('BTC')">
+                        <div class="action-icon warning">
+                            <i class="fab fa-bitcoin"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 600;">Bitcoin Update</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Precio y momentum</div>
+                        </div>
+                    </button>
+                    
+                    <button class="action-btn" onclick="quickAnalysis('market')">
+                        <div class="action-icon success">
+                            <i class="fas fa-globe"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 600;">Mercado General</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Sentiment y outlook</div>
+                        </div>
+                    </button>
+                    
+                    <button class="action-btn" onclick="showUpgradeModal()">
+                        <div class="action-icon" style="background: linear-gradient(135deg, var(--accent), #f97316);">
+                            <i class="fas fa-rocket"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 600;">Upgrade a PRO</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Datos en tiempo real</div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Chat Section -->
+            <div class="chat-section">
+                <div class="chat-container">
+                    <div class="chat-header">
+                        <div>
+                            <h3>🧠 IA Ultra Chat</h3>
+                            <div class="chat-status">
+                                <div class="status-dot"></div>
+                                <span>Claude AI Ultra Activo</span>
+                            </div>
+                        </div>
+                        <button class="refresh-btn" onclick="clearChat()" title="Limpiar chat">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="message ai">
+                            <div class="message-bubble">
+                                🤖 ¡Hola! Soy tu asesor financiero ultra-inteligente powered by Claude AI.
+                                <br><br>
+                                Puedo ayudarte con:
+                                <br>• Análisis técnico de cualquier acción o crypto
+                                <br>• Recomendaciones específicas de entrada/salida
+                                <br>• Gestión de riesgo avanzada
+                                <br>• Estrategias de inversión personalizadas
+                                <br><br>
+                                <strong>¿En qué inversión te puedo ayudar hoy?</strong>
+                            </div>
+                            <div class="message-time">Ahora</div>
+                        </div>
+                    </div>
+                    
+                    <div class="typing-indicator" id="typingIndicator">
+                        <i class="fas fa-robot"></i>
+                        <span>IA Ultra analizando</span>
+                        <div class="typing-dots">
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-container">
+                        <div class="chat-input">
+                            <div class="input-wrapper">
+                                <textarea 
+                                    id="chatInput" 
+                                    class="chat-textarea" 
+                                    placeholder="Pregúntame sobre cualquier inversión... ej: ¿Debo comprar Tesla ahora?"
+                                    onkeydown="handleChatKeydown(event)"
+                                ></textarea>
+                            </div>
+                            <button class="send-button" onclick="sendMessage()" id="sendButton">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Market Panel -->
+                <div class="market-panel">
+                    <div class="panel-header">
+                        <h3 class="panel-title">
+                            <i class="fas fa-chart-line"></i>
+                            Mercado Live
+                        </h3>
+                        <button class="refresh-btn" onclick="refreshMarketData()" id="refreshMarket">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    
+                    <div id="marketData">
+                        <div class="market-item">
+                            <div class="market-symbol">NVDA</div>
+                            <div class="market-price">
+                                <div class="price-value">$180.25</div>
+                                <div class="price-change positive">+2.1%</div>
+                            </div>
+                        </div>
+                        
+                        <div class="market-item">
+                            <div class="market-symbol">TSLA</div>
+                            <div class="market-price">
+                                <div class="price-value">$372.40</div>
+                                <div class="price-change negative">-0.8%</div>
+                            </div>
+                        </div>
+                        
+                        <div class="market-item">
+                            <div class="market-symbol">BTC</div>
+                            <div class="market-price">
+                                <div class="price-value">$61,247</div>
+                                <div class="price-change positive">+1.9%</div>
+                            </div>
+                        </div>
+                        
+                        <div class="market-item">
+                            <div class="market-symbol">MSFT</div>
+                            <div class="market-price">
+                                <div class="price-value">$448.90</div>
+                                <div class="price-change positive">+0.5%</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.8rem; color: var(--text-secondary);">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <div class="status-dot"></div>
+                            Actualizado hace 2 min
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Upgrade Modal -->
+    <div id="upgradeModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeUpgradeModal()">&times;</span>
+            <h3 style="text-align: center; margin-bottom: 1rem; color: var(--primary);">
+                🚀 Upgrade a SmartProIA PRO
+            </h3>
+            <p style="text-align: center; color: var(--text-secondary); margin-bottom: 2rem;">
+                Has alcanzado el límite de consultas gratuitas. 
+                Upgrade para análisis ilimitados y datos en tiempo real.
+            </p>
+            
+            <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; margin-bottom: 2rem; text-align: center;">
+                <div style="font-size: 2rem; font-weight: 800; color: var(--primary); margin-bottom: 0.5rem;">
+                    $19<span style="font-size: 1rem; color: var(--text-secondary);">/mes</span>
+                </div>
+                <div style="color: var(--text-secondary); margin-bottom: 1rem;">Plan PRO Trader</div>
+                <div style="text-align: left;">
+                    <div>✅ 50 análisis ultra-inteligentes por día</div>
+                    <div>✅ Datos en tiempo real de 20+ símbolos</div>
+                    <div>✅ Alertas automáticas WhatsApp/Email</div>
+                    <div>✅ Análisis técnico institucional</div>
+                    <div>✅ Soporte prioritario 24/7</div>
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 1rem;">
+                <button onclick="closeUpgradeModal()" 
+                        style="flex: 1; padding: 1rem; border: 2px solid var(--border); border-radius: 12px; background: white; cursor: pointer; color: var(--text-primary);">
+                    Cancelar
+                </button>
+                <button onclick="upgradeNow()" 
+                        style="flex: 2; padding: 1rem; border: none; border-radius: 12px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; font-weight: 600; cursor: pointer;">
+                    💳 Upgrade Ahora
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let currentUser = null;
+        let chatHistory = [];
+        let isTyping = false;
+        
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', async function() {
+            await initializeApp();
+            startPeriodicUpdates();
+        });
+
+        async function initializeApp() {
+            console.log('🚀 Initializing SmartProIA Ultra App...');
+            
+            // Check if user is logged in
+            const token = localStorage.getItem('smartproia_token');
+            if (!token) {
+                showLoginRequired();
+                return;
+            }
+
+            try {
+                // Get user profile
+                const profile = await fetchUserProfile(token);
+                if (profile.success) {
+                    currentUser = profile.user;
+                    updateUI();
+                    loadInitialData();
+                } else {
+                    showLoginRequired();
+                }
+            } catch (error) {
+                console.error('Initialization error:', error);
+                setTimeout(initializeApp, 5000);
+            }
+        }
+
+        async function fetchUserProfile(token) {
+            const response = await fetch('/api/user-profile', {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            return await response.json();
+        }
+
+        function updateUI() {
+            if (!currentUser) return;
+            
+            // Update header
+            document.getElementById('userName').textContent = currentUser.name;
+            document.getElementById('userPlan').textContent = currentUser.subscription_plan.toUpperCase();
+            document.getElementById('userAvatar').textContent = currentUser.name.charAt(0).toUpperCase();
+            
+            // Update stats
+            document.getElementById('totalAnalysis').textContent = currentUser.total_queries || 0;
+            document.getElementById('queriesRemaining').textContent = currentUser.queries_remaining || 0;
+            
+            // Update query change indicator
+            const queryChange = document.getElementById('queryChange');
+            if (currentUser.queries_remaining <= 1 && currentUser.subscription_plan === 'free') {
+                queryChange.innerHTML = '<i class="fas fa-exclamation-triangle"></i><span>¡Casi agotadas!</span>';
+                queryChange.className = 'stat-change negative';
+            }
+            
+            console.log('✅ UI updated for user:', currentUser.name);
+        }
+
+        async function loadInitialData() {
+            await refreshMarketData();
+        }
+
+        // Chat functionality
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            const sendButton = document.getElementById('sendButton');
+            
+            if (!message || isTyping) return;
+            
+            if (!currentUser) {
+                showNotification('Debes iniciar sesión para usar el chat', 'error');
+                return;
+            }
+            
+            if (currentUser.queries_remaining <= 0) {
+                showUpgradeModal();
+                return;
+            }
+
+            // Add user message
+            addMessage(message, 'user');
+            input.value = '';
+            
+            // Show typing indicator
+            isTyping = true;
+            sendButton.disabled = true;
+            document.getElementById('typingIndicator').style.display = 'flex';
+            
+            try {
+                const token = localStorage.getItem('smartproia_token');
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message })
+                });
+
+                if (response.status === 429) {
+                    const data = await response.json();
+                    showUpgradeModal();
+                    return;
+                }
+
+                const data = await response.json();
+                
+                if (data.response) {
+                    setTimeout(() => {
+                        addMessage(data.response, 'ai');
+                        
+                        if (data.queries_remaining !== undefined) {
+                            document.getElementById('queriesRemaining').textContent = data.queries_remaining;
+                            currentUser.queries_remaining = data.queries_remaining;
+                        }
+                    }, 1500);
+                } else {
+                    addMessage('Lo siento, hubo un error procesando tu solicitud. Inténtalo de nuevo.', 'ai');
+                }
+
+            } catch (error) {
+                console.error('Chat error:', error);
+                addMessage('Error de conexión. Por favor, verifica tu conexión e intenta de nuevo.', 'ai');
+            } finally {
+                setTimeout(() => {
+                    isTyping = false;
+                    sendButton.disabled = false;
+                    document.getElementById('typingIndicator').style.display = 'none';
+                }, 1500);
+            }
+        }
+
+        function addMessage(content, type) {
+            const messagesContainer = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('es-ES', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            messageDiv.innerHTML = `
+                <div class="message-bubble">${content}</div>
+                <div class="message-time">${timeString}</div>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            
+            chatHistory.push({ content, type, timestamp: now });
+        }
+
+        function handleChatKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function clearChat() {
+            const messagesContainer = document.getElementById('chatMessages');
+            messagesContainer.innerHTML = `
+                <div class="message ai">
+                    <div class="message-bubble">
+                        🤖 Chat limpiado. ¡Estoy listo para ayudarte con análisis ultra-inteligentes!
+                    </div>
+                    <div class="message-time">Ahora</div>
+                </div>
+            `;
+            chatHistory = [];
+        }
+
+        // Quick actions
+        function quickAnalysis(symbol) {
+            const queries = {
+                'NVDA': '¿Debo comprar NVIDIA ahora? Dame análisis técnico completo.',
+                'BTC': '¿Cómo está Bitcoin? Dame precio actual y perspectiva.',
+                'market': '¿Cómo está el mercado hoy? Dame un resumen general.'
+            };
+            
+            const query = queries[symbol] || `Analiza ${symbol} para mí`;
+            document.getElementById('chatInput').value = query;
+            sendMessage();
+        }
+
+        // Market data
+        async function refreshMarketData() {
+            const refreshBtn = document.getElementById('refreshMarket');
+            const icon = refreshBtn.querySelector('i');
+            
+            icon.style.animation = 'spin 1s linear infinite';
+            
+            try {
+                const token = localStorage.getItem('smartproia_token');
+                if (!token) return;
+                
+                const response = await fetch('/api/market-data', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.data) {
+                    updateMarketDisplay(data.data);
+                }
+                
+            } catch (error) {
+                console.error('Market data error:', error);
+            } finally {
+                setTimeout(() => {
+                    icon.style.animation = '';
+                }, 1000);
+            }
+        }
+
+        function updateMarketDisplay(marketData) {
+            const container = document.getElementById('marketData');
+            const symbols = ['NVDA', 'TSLA', 'BTC-USD', 'MSFT'];
+            
+            container.innerHTML = '';
+            
+            symbols.forEach(symbol => {
+                const data = marketData[symbol];
+                if (!data) return;
+                
+                const changeClass = data.changePercent >= 0 ? 'positive' : 'negative';
+                const changeIcon = data.changePercent >= 0 ? '+' : '';
+                
+                const displaySymbol = symbol.replace('-USD', '');
+                const price = symbol.includes('-USD') 
+                    ? `$${data.price?.toLocaleString()}`
+                    : `$${data.price?.toFixed(2)}`;
+                
+                container.innerHTML += `
+                    <div class="market-item">
+                        <div class="market-symbol">${displaySymbol}</div>
+                        <div class="market-price">
+                            <div class="price-value">${price}</div>
+                            <div class="price-change ${changeClass}">${changeIcon}${data.changePercent?.toFixed(1)}%</div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        // Sidebar functionality
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+            
+            sidebar.classList.toggle('collapsed');
+            mainContent.classList.toggle('expanded');
+        }
+
+        // Upgrade modal
+        function showUpgradeModal() {
+            document.getElementById('upgradeModal').style.display = 'flex';
+            document.getElementById('upgradeModal').style.alignItems = 'center';
+            document.getElementById('upgradeModal').style.justifyContent = 'center';
+        }
+
+        function closeUpgradeModal() {
+            document.getElementById('upgradeModal').style.display = 'none';
+        }
+
+        function upgradeNow() {
+            window.open('/#pricing', '_blank');
+            closeUpgradeModal();
+        }
+
+        // Notifications
+        function showNotification(message, type = 'info') {
+            console.log(`${type.toUpperCase()}: ${message}`);
+        }
+
+        // Login required
+        function showLoginRequired() {
+            document.body.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: center; height: 100vh; background: var(--bg-secondary);">
+                    <div style="background: white; padding: 3rem; border-radius: 16px; box-shadow: var(--shadow-lg); text-align: center; max-width: 400px;">
+                        <div style="color: var(--primary); font-size: 3rem; margin-bottom: 1rem;">
+                            <i class="fas fa-lock"></i>
+                        </div>
+                        <h2 style="margin-bottom: 1rem;">Acceso Requerido</h2>
+                        <p style="color: var(--text-secondary); margin-bottom: 2rem;">
+                            Necesitas iniciar sesión para acceder al dashboard ultra-inteligente.
+                        </p>
+                        <button onclick="window.location.href='/'" 
+                                style="background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; padding: 1rem 2rem; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; font-size: 1.1rem;">
+                            <i class="fas fa-home"></i>
+                            Ir al Inicio
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Periodic updates
+        function startPeriodicUpdates() {
+            setInterval(refreshMarketData, 2 * 60 * 1000);
+            setInterval(updateStats, 30 * 1000);
+        }
+
+        function updateStats() {
+            const currentAnalysis = parseInt(document.getElementById('totalAnalysis').textContent);
+            if (Math.random() > 0.8) {
+                document.getElementById('totalAnalysis').textContent = currentAnalysis + 1;
+            }
+        }
+
+        console.log('🧠 SmartProIA Ultra Dashboard Loaded Successfully');
+    </script>
+</body>
+</html>
