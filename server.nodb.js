@@ -419,9 +419,12 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     message: 'SmartProIA API (NO DB MODE)',
-    version: '1.0.0',
+    version: '2.0.0',
     mode: 'in-memory-database',
+    realTimeData: true,
+    alphaVantageIntegrated: !!process.env.ALPHA_VANTAGE_API_KEY,
     warning: 'Los datos se pierden al reiniciar el servidor',
+    deployedAt: new Date().toISOString(),
     endpoints: {
       auth: ['/api/register', '/api/login', '/api/user-data'],
       chat: ['/api/chat'],
