@@ -54,6 +54,71 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Función para obtener datos de mercado en tiempo real
+async function getMarketData(symbol) {
+  if (!process.env.ALPHA_VANTAGE_API_KEY) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${process.env.ALPHA_VANTAGE_API_KEY}`
+    );
+    const data = await response.json();
+
+    if (data['Global Quote']) {
+      const quote = data['Global Quote'];
+      return {
+        symbol: quote['01. symbol'],
+        price: parseFloat(quote['05. price']),
+        change: parseFloat(quote['09. change']),
+        changePercent: quote['10. change percent'],
+        volume: quote['06. volume'],
+        lastUpdate: quote['07. latest trading day']
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching market data:', error);
+    return null;
+  }
+}
+
+// Función para extraer símbolos de acciones del mensaje
+function extractStockSymbols(message) {
+  const commonSymbols = {
+    'nvidia': 'NVDA',
+    'nvda': 'NVDA',
+    'tesla': 'TSLA',
+    'tsla': 'TSLA',
+    'apple': 'AAPL',
+    'aapl': 'AAPL',
+    'microsoft': 'MSFT',
+    'msft': 'MSFT',
+    'google': 'GOOGL',
+    'googl': 'GOOGL',
+    'alphabet': 'GOOGL',
+    'amazon': 'AMZN',
+    'amzn': 'AMZN',
+    'meta': 'META',
+    'facebook': 'META',
+    'ionq': 'IONQ',
+    'rigetti': 'RGTI',
+    'ibm': 'IBM'
+  };
+
+  const messageLower = message.toLowerCase();
+  const foundSymbols = [];
+
+  for (const [keyword, symbol] of Object.entries(commonSymbols)) {
+    if (messageLower.includes(keyword)) {
+      foundSymbols.push(symbol);
+    }
+  }
+
+  return [...new Set(foundSymbols)]; // Remove duplicates
+}
+
 // Función para llamar a Claude API
 async function callClaudeAPI(userMessage, subscriptionPlan = 'free') {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -61,6 +126,24 @@ async function callClaudeAPI(userMessage, subscriptionPlan = 'free') {
   }
 
   const isPremium = subscriptionPlan === 'premium';
+
+  // Extraer símbolos y obtener datos en tiempo real
+  const symbols = extractStockSymbols(userMessage);
+  let marketDataContext = '';
+
+  if (symbols.length > 0) {
+    marketDataContext = '\n\n📊 DATOS DE MERCADO EN TIEMPO REAL:\n';
+    for (const symbol of symbols.slice(0, 3)) { // Máximo 3 símbolos para no sobrecargar
+      const data = await getMarketData(symbol);
+      if (data) {
+        marketDataContext += `\n${symbol}:
+- Precio actual: $${data.price.toFixed(2)}
+- Cambio: ${data.change >= 0 ? '+' : ''}${data.change.toFixed(2)} (${data.changePercent})
+- Volumen: ${parseInt(data.volume).toLocaleString()}
+- Última actualización: ${data.lastUpdate}\n`;
+      }
+    }
+  }
 
   const systemPrompt = `Eres SmartProIA, un asesor de inversiones de élite con experiencia en Wall Street, especializado en tecnología emergente, IA y computación cuántica.
 
@@ -110,8 +193,11 @@ TONO:
 IMPORTANTE:
 - SIEMPRE termina con: "⚠️ Disclaimer: Este análisis es informativo y no constituye asesoría financiera certificada. Consulta con un profesional antes de invertir."
 - Usa emojis estratégicamente (📊 📈 💡 🚀 ⚡) para hacerlo visual
-- Menciona datos reales cuando sea posible
+- USA LOS DATOS EN TIEMPO REAL que te proporciono para análisis preciso
+- Menciona el precio actual y cambios cuando analices acciones
 - Si no sabes algo exacto, di "según las últimas tendencias del mercado"
+
+${marketDataContext ? `\n${marketDataContext}\nUSA ESTOS DATOS REALES en tu análisis. Son del día de hoy.` : ''}
 
 RESPONDE EN ESPAÑOL, con terminología profesional pero comprensible.`;
 
