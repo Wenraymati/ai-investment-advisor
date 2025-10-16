@@ -1,9 +1,9 @@
 {
   "name": "ai-investment-advisor",
   "version": "1.0.0",
-  "main": "server.js",
+  "main": "server.nodb.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.nodb.js"
   },
   "dependencies": {
     "express": "^4.17.1",
