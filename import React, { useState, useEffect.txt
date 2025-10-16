@@ -1,0 +1,600 @@
+import React, { useState, useEffect } from 'react';
+import { MessageCircle, TrendingUp, BarChart3, Bell, Settings, Crown, Zap, Star, Check, X } from 'lucide-react';
+
+const API_BASE = 'http://localhost:3001/api';
+
+// Componente principal de la aplicación
+const AIInvestmentAdvisor = () => {
+  const [currentPage, setCurrentPage] = useState('login');
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem('token'));
+
+  useEffect(() => {
+    if (token) {
+      fetchUserData();
+    }
+  }, [token]);
+
+  const fetchUserData = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/user-data`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUser(data.user);
+        setCurrentPage('dashboard');
+      } else {
+        localStorage.removeItem('token');
+        setToken(null);
+      }
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+    }
+  };
+
+  const handleLogin = async (email, password) => {
+    try {
+      const response = await fetch(`${API_BASE}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setToken(data.token);
+        setUser(data.user);
+        localStorage.setItem('token', data.token);
+        setCurrentPage('dashboard');
+      } else {
+        const error = await response.json();
+        alert(error.error);
+      }
+    } catch (error) {
+      alert('Error de conexión');
+    }
+  };
+
+  const handleRegister = async (email, password, name) => {
+    try {
+      const response = await fetch(`${API_BASE}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setToken(data.token);
+        setUser(data.user);
+        localStorage.setItem('token', data.token);
+        setCurrentPage('dashboard');
+      } else {
+        const error = await response.json();
+        alert(error.error);
+      }
+    } catch (error) {
+      alert('Error de conexión');
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setToken(null);
+    setUser(null);
+    setCurrentPage('login');
+  };
+
+  // Componente de Login/Register
+  const AuthPage = () => {
+    const [isLogin, setIsLogin] = useState(true);
+    const [formData, setFormData] = useState({ email: '', password: '', name: '' });
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      if (isLogin) {
+        handleLogin(formData.email, formData.password);
+      } else {
+        handleRegister(formData.email, formData.password, formData.name);
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-900 to-purple-900 flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white rounded-xl shadow-2xl p-8">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">SmartProIA</h1>
+            <p className="text-gray-600">Tu Asesor de Inversiones con IA</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {!isLogin && (
+              <input
+                type="text"
+                placeholder="Nombre completo"
+                value={formData.name}
+                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              />
+            )}
+            
+            <input
+              type="email"
+              placeholder="Email"
+              value={formData.email}
+              onChange={(e) => setFormData({...formData, email: e.target.value})}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            />
+            
+            <input
+              type="password"
+              placeholder="Contraseña"
+              value={formData.password}
+              onChange={(e) => setFormData({...formData, password: e.target.value})}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            />
+
+            <button
+              type="submit"
+              className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition duration-200 font-semibold"
+            >
+              {isLogin ? 'Iniciar Sesión' : 'Registrarse'}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-blue-600 hover:text-blue-700 font-medium"
+            >
+              {isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Componente de Dashboard
+  const Dashboard = () => {
+    const [activeTab, setActiveTab] = useState('chat');
+
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center">
+                <h1 className="text-2xl font-bold text-gray-900">SmartProIA</h1>
+                {user?.subscription_plan === 'premium' && (
+                  <Crown className="ml-2 h-5 w-5 text-yellow-500" />
+                )}
+              </div>
+              
+              <div className="flex items-center space-x-4">
+                <div className="text-sm text-gray-600">
+                  Hola, {user?.name}
+                  <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                    {user?.subscription_plan}
+                  </span>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="text-gray-600 hover:text-gray-900"
+                >
+                  Salir
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Navigation Tabs */}
+          <div className="mb-8">
+            <nav className="flex space-x-8">
+              {[
+                { id: 'chat', label: 'Chat IA', icon: MessageCircle },
+                { id: 'portfolio', label: 'Portfolio', icon: BarChart3 },
+                { id: 'alerts', label: 'Alertas', icon: Bell },
+                { id: 'pricing', label: 'Planes', icon: Star }
+              ].map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id)}
+                  className={`flex items-center px-3 py-2 rounded-lg font-medium ${
+                    activeTab === id
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <Icon className="h-5 w-5 mr-2" />
+                  {label}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {/* Tab Content */}
+          {activeTab === 'chat' && <ChatTab />}
+          {activeTab === 'portfolio' && <PortfolioTab />}
+          {activeTab === 'alerts' && <AlertsTab />}
+          {activeTab === 'pricing' && <PricingTab />}
+        </div>
+      </div>
+    );
+  };
+
+  // Componente de Chat
+  const ChatTab = () => {
+    const [messages, setMessages] = useState([]);
+    const [inputMessage, setInputMessage] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    const sendMessage = async () => {
+      if (!inputMessage.trim()) return;
+
+      const newMessage = { type: 'user', content: inputMessage };
+      setMessages(prev => [...prev, newMessage]);
+      setInputMessage('');
+      setIsLoading(true);
+
+      try {
+        const response = await fetch(`${API_BASE}/chat`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ message: inputMessage })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setMessages(prev => [...prev, { type: 'ai', content: data.response }]);
+        } else {
+          const error = await response.json();
+          setMessages(prev => [...prev, { type: 'error', content: error.error }]);
+        }
+      } catch (error) {
+        setMessages(prev => [...prev, { type: 'error', content: 'Error de conexión' }]);
+      }
+
+      setIsLoading(false);
+    };
+
+    return (
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-xl font-semibold mb-4">Consulta a tu Asesor de IA</h2>
+        
+        {/* Messages */}
+        <div className="h-96 overflow-y-auto mb-4 p-4 border rounded-lg bg-gray-50">
+          {messages.length === 0 && (
+            <div className="text-center text-gray-500 mt-20">
+              <MessageCircle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <p>¡Hola! Soy tu asesor de inversiones en IA. ¿En qué puedo ayudarte?</p>
+              <div className="mt-4 text-sm">
+                <p>Puedes preguntarme sobre:</p>
+                <ul className="mt-2 space-y-1">
+                  <li>• Análisis de acciones de IA/Quantum</li>
+                  <li>• Recomendaciones de inversión</li>
+                  <li>• Tendencias del mercado</li>
+                  <li>• Estrategias de portfolio</li>
+                </ul>
+              </div>
+            </div>
+          )}
+          
+          {messages.map((message, index) => (
+            <div
+              key={index}
+              className={`mb-4 ${message.type === 'user' ? 'text-right' : 'text-left'}`}
+            >
+              <div
+                className={`inline-block max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                  message.type === 'user'
+                    ? 'bg-blue-500 text-white'
+                    : message.type === 'error'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-gray-200 text-gray-900'
+                }`}
+              >
+                {message.content}
+              </div>
+            </div>
+          ))}
+          
+          {isLoading && (
+            <div className="text-left mb-4">
+              <div className="inline-block bg-gray-200 text-gray-900 px-4 py-2 rounded-lg">
+                <div className="flex items-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+                  Analizando...
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Input */}
+        <div className="flex space-x-2">
+          <input
+            type="text"
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+            placeholder="Escribe tu consulta sobre inversiones..."
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <button
+            onClick={sendMessage}
+            disabled={isLoading || !inputMessage.trim()}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Enviar
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Componente de Portfolio
+  const PortfolioTab = () => {
+    const [stocks, setStocks] = useState(['NVDA', 'GOOGL', 'MSFT']);
+    const [newStock, setNewStock] = useState('');
+    const [analysis, setAnalysis] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+
+    const addStock = () => {
+      if (newStock && !stocks.includes(newStock.toUpperCase())) {
+        setStocks([...stocks, newStock.toUpperCase()]);
+        setNewStock('');
+      }
+    };
+
+    const removeStock = (stock) => {
+      setStocks(stocks.filter(s => s !== stock));
+    };
+
+    const analyzePortfolio = async () => {
+      if (user?.subscription_plan !== 'premium') {
+        alert('Esta función está disponible solo para usuarios Premium');
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const response = await fetch(`${API_BASE}/analyze-portfolio`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ stocks })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setAnalysis(data.analysis);
+        } else {
+          const error = await response.json();
+          alert(error.error);
+        }
+      } catch (error) {
+        alert('Error al analizar portfolio');
+      }
+      setIsLoading(false);
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-xl font-semibold mb-4">Mi Portfolio</h2>
+          
+          {/* Add Stock */}
+          <div className="flex space-x-2 mb-4">
+            <input
+              type="text"
+              value={newStock}
+              onChange={(e) => setNewStock(e.target.value)}
+              placeholder="Ticker (ej: NVDA)"
+              className="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              onClick={addStock}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Agregar
+            </button>
+          </div>
+
+          {/* Stock List */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+            {stocks.map(stock => (
+              <div key={stock} className="flex items-center justify-between bg-gray-100 px-3 py-2 rounded">
+                <span className="font-medium">{stock}</span>
+                <button
+                  onClick={() => removeStock(stock)}
+                  className="text-red-500 hover:text-red-700"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Analyze Button */}
+          <button
+            onClick={analyzePortfolio}
+            disabled={isLoading || stocks.length === 0}
+            className="w-full py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center"
+          >
+            {isLoading ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Analizando...
+              </>
+            ) : (
+              <>
+                <BarChart3 className="h-5 w-5 mr-2" />
+                Analizar Portfolio {user?.subscription_plan !== 'premium' && '(Premium)'}
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Analysis Results */}
+        {analysis && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold mb-4">Análisis del Portfolio</h3>
+            <div className="prose prose-blue max-w-none">
+              <pre className="whitespace-pre-wrap text-sm">{analysis}</pre>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Componente de Alertas
+  const AlertsTab = () => {
+    return (
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-xl font-semibold mb-4">Alertas de Inversión</h2>
+        <div className="text-center text-gray-500 py-12">
+          <Bell className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+          <p>Próximamente: Sistema de alertas personalizadas</p>
+          <p className="text-sm mt-2">Te notificaremos sobre cambios importantes en tus inversiones</p>
+        </div>
+      </div>
+    );
+  };
+
+  // Componente de Precios
+  const PricingTab = () => {
+    const plans = [
+      {
+        name: 'Básico',
+        price: '$9',
+        features: [
+          '50 consultas al mes',
+          'Análisis básico de acciones',
+          'Alertas por email',
+          'Soporte por email'
+        ],
+        current: user?.subscription_plan === 'basic'
+      },
+      {
+        name: 'Premium',
+        price: '$47',
+        features: [
+          'Consultas ilimitadas',
+          'Análisis completo de portfolio',
+          'Alertas en tiempo real',
+          'Reportes semanales personalizados',
+          'Soporte prioritario',
+          'Acceso a datos exclusivos'
+        ],
+        current: user?.subscription_plan === 'premium',
+        popular: true
+      }
+    ];
+
+    const handleUpgrade = async (plan) => {
+      try {
+        const response = await fetch(`${API_BASE}/create-checkout-session`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ plan })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          window.location.href = data.url;
+        }
+      } catch (error) {
+        alert('Error al procesar el pago');
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Planes de Suscripción</h2>
+          <p className="text-gray-600">Elige el plan que mejor se adapte a tus necesidades de inversión</p>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+          {plans.map((plan, index) => (
+            <div
+              key={index}
+              className={`bg-white rounded-lg shadow-lg p-6 relative ${
+                plan.popular ? 'ring-2 ring-blue-500' : ''
+              }`}
+            >
+              {plan.popular && (
+                <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                  <span className="bg-blue-500 text-white px-4 py-1 rounded-full text-sm font-medium">
+                    Más Popular
+                  </span>
+                </div>
+              )}
+              
+              <div className="text-center mb-6">
+                <h3 className="text-xl font-semibold mb-2">{plan.name}</h3>
+                <div className="text-3xl font-bold text-blue-600 mb-1">
+                  {plan.price}
+                  <span className="text-lg text-gray-500">/mes</span>
+                </div>
+              </div>
+
+              <ul className="space-y-3 mb-8">
+                {plan.features.map((feature, idx) => (
+                  <li key={idx} className="flex items-center">
+                    <Check className="h-5 w-5 text-green-500 mr-3" />
+                    <span className="text-gray-700">{feature}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <button
+                onClick={() => handleUpgrade(plan.name.toLowerCase())}
+                disabled={plan.current}
+                className={`w-full py-3 rounded-lg font-semibold ${
+                  plan.current
+                    ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                    : plan.popular
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-800 text-white hover:bg-gray-900'
+                }`}
+              >
+                {plan.current ? 'Plan Actual' : 'Seleccionar Plan'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Renderizado principal
+  if (!token) {
+    return <AuthPage />;
+  }
+
+  return <Dashboard />;
+};
+
+export default AIInvestmentAdvisor;

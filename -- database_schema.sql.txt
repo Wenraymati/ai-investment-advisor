@@ -1,0 +1,186 @@
+-- database_schema.sql
+-- Esquema completo de la base de datos para AI Investment Advisor
+
+-- Crear base de datos
+CREATE DATABASE ai_investment_advisor;
+
+-- Usar la base de datos
+\c ai_investment_advisor;
+
+-- Tabla de usuarios
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    subscription_plan VARCHAR(50) DEFAULT 'free', -- free, basic, premium
+    stripe_customer_id VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla de historial de chat
+CREATE TABLE chat_history (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    response TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla de análisis de portfolio
+CREATE TABLE portfolio_analyses (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    stocks JSONB NOT NULL, -- Array de tickers
+    analysis TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla de alertas de usuario
+CREATE TABLE user_alerts (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    stock_symbol VARCHAR(10) NOT NULL,
+    alert_type VARCHAR(50) NOT NULL, -- price_above, price_below, news_sentiment
+    target_value DECIMAL(10,2),
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla de datos de acciones (cache)
+CREATE TABLE stock_data (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(10) NOT NULL,
+    company_name VARCHAR(255),
+    sector VARCHAR(100),
+    is_ai_quantum BOOLEAN DEFAULT false,
+    last_price DECIMAL(10,2),
+    market_cap BIGINT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(symbol)
+);
+
+-- Tabla de noticias relevantes
+CREATE TABLE news_articles (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    content TEXT,
+    source VARCHAR(255),
+    url VARCHAR(500),
+    published_at TIMESTAMP,
+    sentiment_score DECIMAL(3,2), -- -1 a 1
+    related_stocks JSONB, -- Array de símbolos relacionados
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla de reportes generados
+CREATE TABLE generated_reports (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    report_type VARCHAR(50) NOT NULL, -- weekly, portfolio, market_analysis
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla de pagos y suscripciones
+CREATE TABLE payments (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    stripe_payment_id VARCHAR(255),
+    amount DECIMAL(10,2) NOT NULL,
+    currency VARCHAR(3) DEFAULT 'USD',
+    status VARCHAR(50) NOT NULL, -- succeeded, failed, pending
+    subscription_plan VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Índices para mejorar performance
+CREATE INDEX idx_chat_history_user_date ON chat_history(user_id, created_at);
+CREATE INDEX idx_portfolio_analyses_user ON portfolio_analyses(user_id);
+CREATE INDEX idx_user_alerts_active ON user_alerts(user_id, is_active);
+CREATE INDEX idx_stock_data_symbol ON stock_data(symbol);
+CREATE INDEX idx_news_articles_date ON news_articles(published_at);
+CREATE INDEX idx_payments_user_status ON payments(user_id, status);
+
+-- Insertar datos iniciales de acciones AI/Quantum
+INSERT INTO stock_data (symbol, company_name, sector, is_ai_quantum, market_cap) VALUES
+('IONQ', 'IonQ Inc', 'Quantum Computing', true, 2800000000),
+('RGTI', 'Rigetti Computing', 'Quantum Computing', true, 890000000),
+('QBTS', 'D-Wave Quantum', 'Quantum Computing', true, 445000000),
+('IBM', 'International Business Machines', 'Technology', true, 185000000000),
+('GOOGL', 'Alphabet Inc', 'Technology', true, 2100000000000),
+('MSFT', 'Microsoft Corporation', 'Technology', true, 3200000000000),
+('NVDA', 'NVIDIA Corporation', 'Semiconductors', true, 1800000000000),
+('AMD', 'Advanced Micro Devices', 'Semiconductors', true, 240000000000),
+('INTC', 'Intel Corporation', 'Semiconductors', true, 150000000000),
+('AAPL', 'Apple Inc', 'Technology', true, 3500000000000),
+('TSLA', 'Tesla Inc', 'Automotive/AI', true, 800000000000),
+('PLTR', 'Palantir Technologies', 'Data Analytics/AI', true, 65000000000),
+('SNOW', 'Snowflake Inc', 'Cloud Computing/AI', true, 45000000000),
+('NET', 'Cloudflare Inc', 'Cloud Security/AI', true, 25000000000),
+('AI', 'C3.ai Inc', 'Artificial Intelligence', true, 3500000000);
+
+-- Crear función para actualizar updated_at automáticamente
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Aplicar trigger a tabla users
+CREATE TRIGGER update_users_updated_at 
+    BEFORE UPDATE ON users 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Crear función para limpiar datos antiguos (ejecutar mensualmente)
+CREATE OR REPLACE FUNCTION cleanup_old_data()
+RETURNS void AS $$
+BEGIN
+    -- Eliminar historial de chat mayor a 6 meses para usuarios free
+    DELETE FROM chat_history 
+    WHERE created_at < CURRENT_DATE - INTERVAL '6 months'
+    AND user_id IN (SELECT id FROM users WHERE subscription_plan = 'free');
+    
+    -- Eliminar noticias mayores a 1 año
+    DELETE FROM news_articles 
+    WHERE published_at < CURRENT_DATE - INTERVAL '1 year';
+    
+    -- Log de limpieza
+    INSERT INTO system_logs (action, description, created_at) 
+    VALUES ('cleanup', 'Cleaned old data successfully', CURRENT_TIMESTAMP);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Tabla de logs del sistema
+CREATE TABLE system_logs (
+    id SERIAL PRIMARY KEY,
+    action VARCHAR(100) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Crear vista para estadísticas de usuarios
+CREATE VIEW user_statistics AS
+SELECT 
+    u.id,
+    u.email,
+    u.subscription_plan,
+    u.created_at as user_since,
+    COUNT(DISTINCT ch.id) as total_queries,
+    COUNT(DISTINCT pa.id) as total_analyses,
+    COUNT(DISTINCT ua.id) as active_alerts,
+    EXTRACT(days FROM (CURRENT_DATE - u.created_at::date)) as days_active
+FROM users u
+LEFT JOIN chat_history ch ON u.id = ch.user_id
+LEFT JOIN portfolio_analyses pa ON u.id = pa.user_id
+LEFT JOIN user_alerts ua ON u.id = ua.user_id AND ua.is_active = true
+GROUP BY u.id, u.email, u.subscription_plan, u.created_at;
+
+-- Conceder permisos (ajustar según tu configuración)
+-- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO your_app_user;
+-- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO your_app_user;
